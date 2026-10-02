@@ -1,4 +1,4 @@
-# OpenCord
+# Open_Cord
 
 기존 Kimaki가 현재 OpenCode CLI v2 환경에서 동작하지 않아 바이브 코딩으로 만든 Discord 브릿지입니다.
 
@@ -18,7 +18,7 @@ Typical flow:
 4. Send normal messages in the thread to talk to the OpenCode agent.
 5. Use slash commands in the thread for agent/model selection, interruption, diffs, and synchronization.
 
-> **Release status:** GitHub source only. The npm package `open_cord` is not published yet. `npx opencord` belongs to an unrelated project.
+> The npm package is `open_cord`. **Do not run `npx opencord`**: that name belongs to an unrelated project.
 
 ## Requirements
 
@@ -31,10 +31,38 @@ Typical flow:
 | Discord message content intent | Required for thread passthrough messages. |
 | Local project paths | The bot must run on the same machine where configured projects exist. |
 
+## npm 설치 (권장)
+
+1. [Node.js](https://nodejs.org/) 24 이상과 [OpenCode CLI](https://opencode.ai/docs/) v2를 설치합니다. 터미널에서 `node --version`과 `opencode --version`을 확인합니다. OpenCode가 실행되지 않으면 먼저 설치하거나 작업 폴더의 `.env`에서 `OPENCODE_EXECUTABLE`을 지정합니다.
+2. [Discord Developer Portal](https://discord.com/developers/applications)에서 앱과 봇을 만들고 토큰을 복사합니다. **Message Content Intent**를 켭니다. OAuth2 URL Generator에서 `bot`, `applications.commands` 범위를 선택해 서버에 초대합니다. 봇에는 **View Channel**, **Read Message History**, **Send Messages**, **Create Public Threads**, **Send Messages in Threads** 권한이 필요합니다. 사용자와 봇만 접근 가능한 텍스트 채널을 만드세요. Discord 사용자 설정에서 개발자 모드를 켠 뒤 서버·채널·본인 계정의 ID를 우클릭해 복사합니다.
+3. 봇 전용 작업 폴더를 만들고 그 폴더 안에 `config.yaml`을 저장합니다. 아래 **모든** 자리표시자를 실제 값으로 바꿉니다.
+
+```yaml
+discordToken: "YOUR_DISCORD_BOT_TOKEN"
+servers:
+  - serverId: "YOUR_DISCORD_SERVER_ID"
+    channels:
+      - channelId: "YOUR_PRIVATE_CHANNEL_ID"
+        projectPath: "C:/path/to/your/project"
+        allowedUsers: ["YOUR_DISCORD_USER_ID"]
+        permissions: interactive
+        autoConnect: true
+```
+
+`projectPath`는 봇이 실행되는 컴퓨터의 **존재하는** 프로젝트 폴더입니다. macOS/Linux에서는 `/home/you/project`처럼 절대 경로를 사용하세요. `allowedUsers`는 봇 사용만 제한합니다. **채널 읽기 권한은 Discord에서 별도로 제한**하세요. 서버 관리자는 여전히 접근할 수 있습니다. `interactive`는 OpenCode 권한 요청을 Discord 승인 버튼으로 표시합니다.
+
+4. 같은 작업 폴더를 현재 디렉터리로 두고 실행합니다.
+
+```bash
+npx open_cord
+```
+
+첫 실행 시 npm 패키지를 내려받고 설치 확인을 요청할 수 있습니다. 터미널을 켜 두세요. 종료는 Ctrl+C입니다. 봇은 **현재 작업 폴더**에서 `config.yaml`과 선택적 `.env`를 읽고 `state.json`을 만듭니다. Discord 채널에서 `/help`, `/new`를 실행하고 새 스레드에 메시지를 보내 확인하세요. 봇은 하나만 실행하세요. `npx`는 Discord 봇·채널·`config.yaml`을 만들지 않습니다. **`npx opencord`는 다른 프로젝트이므로 실행하지 마세요.**
+
 ## Install from source
 
 1. Create a Discord application and bot in the [Developer Portal](https://discord.com/developers/applications). Enable **Message Content Intent**. Invite the bot with the `bot` and `applications.commands` scopes. Give it permission to view the project channel, send/read messages, and create/send in public threads. A channel-creating setup wizard also needs **Manage Channels**.
-2. Install Node.js 24+, pnpm 10.33.1, and OpenCode CLI v2 on the computer that hosts your projects. Download and extract this repository's ZIP from [GitHub](https://github.com/HaYanJongSeong/opencord). Open a terminal in the extracted directory.
+2. Install Node.js 24+, pnpm 10.33.1, and OpenCode CLI v2 on the computer that hosts your projects. Download and extract this repository's ZIP from [GitHub](https://github.com/HaYanJongSeong/Open_Cord). Open a terminal in the extracted directory.
 3. Install and build:
 
 ```bash
@@ -42,7 +70,7 @@ pnpm install
 pnpm build
 ```
 
-4. Copy `config.example.yaml` to `config.yaml` (PowerShell: `Copy-Item config.example.yaml config.yaml`; macOS/Linux: `cp config.example.yaml config.yaml`). Replace the example Discord **bot token**, server ID, channel ID, and project path with your own. The channel must already exist; use only one channel entry at first. Alternatively, after building, run `pnpm run setup` to create a project channel automatically. Enter **your own project path** when prompted.
+4. Copy `config.example.yaml` to `config.yaml` (PowerShell: `Copy-Item config.example.yaml config.yaml`; macOS/Linux: `cp config.example.yaml config.yaml`). Replace the example Discord **bot token**, server ID, channel ID, project path, and allowed user ID with your own. The channel must already exist and be private; use only one channel entry at first. Alternatively, `pnpm run setup` creates a private channel for one user; it needs the bot's **Manage Channels** permission. The wizard refuses to reuse a channel with the same name; configure existing channels manually. Keep the generated `config.yaml` and backups local.
 5. Start from the same directory:
 
 ```bash
@@ -54,16 +82,6 @@ On Windows, double-click `opencord.cmd` instead (or run `.\opencord.cmd` in Powe
 The Discord bot token is currently stored in **local `config.yaml`, not an environment variable**. Both `config.yaml` and `.env` are excluded from the npm package and ignored by git. For a pre-existing shared OpenCode server, copy `.env.example` to `.env` and set `OPENCODE_SERVER_PASSWORD`, `OPENCODE_SHARED_SERVER_URL`, and `OPENCODE_SHARED_SERVER_PROJECT`. The CLI reads `.env` from the current working directory before loading bot modules; existing environment variables take precedence. Never upload local config, state, credentials, backups, or logs. Ignoring files does not remove anything already committed to repository history.
 
 Set `OPENCODE_DISCORD_SYNC_IMAGES=true` in `.env` to attach newly displayed OpenCode tool images to their mapped Discord threads across all projects. Existing images are not bulk-replayed when enabled. Only PNG, JPEG, WebP, and GIF `data:` images are sent (up to 8 MiB); remote URLs and local paths are never fetched. Members with thread access can see the images. Restart the bot after changing `.env`.
-
-### Future npm launch (not available yet)
-
-After `open_cord` is published to npm, you will be able to make a separate working directory with a `config.yaml` (use the minimal example below), optional `.env`, and your project path, then start it there:
-
-```bash
-npx open_cord
-```
-
-`npx` does not create `config.yaml`, a Discord bot, or project channels. The published npm package will have one executable named `opencord`; npm selects that executable for `npx open_cord`. **Do not run `npx opencord`**: that package belongs to someone else.
 
 Run in development from a source checkout:
 
@@ -81,17 +99,19 @@ pnpm build
 
 ## Configuration
 
-Runtime configuration lives in `config.yaml` at the repo root. This file is ignored by git because it contains secrets.
+Runtime configuration lives in `config.yaml` in the working directory. This file is ignored by git because it contains secrets.
 
-Use `config.example.yaml` as the reference. Minimal shape:
+Use `config.example.yaml` as the reference. Minimal, restricted shape:
 
 ```yaml
-discordToken: "YOUR_BOT_TOKEN_HERE"
+discordToken: "YOUR_DISCORD_BOT_TOKEN"
 servers:
-  - serverId: "111111111111111111"
+  - serverId: "YOUR_DISCORD_SERVER_ID"
     channels:
-      - channelId: "123456789012345678"
+      - channelId: "YOUR_PRIVATE_CHANNEL_ID"
         projectPath: "../project"
+        allowedUsers: ["YOUR_DISCORD_USER_ID"]
+        permissions: interactive
 ```
 
 Channel options:
@@ -240,6 +260,6 @@ For production-like use:
 
 ## Publishing
 
-`pnpm build` produces `dist/`; `npm pack --dry-run --json` shows the allowlisted package contents. Packaging runs the build first. Include only the compiled `dist/src/` and `dist/scripts/discord/`, launch scripts, example config, example env file, README, and LICENSE. Do not publish local state, `HANDOFF.md`, archived work, or the `.env` file. This package is a local bot, not a hosted Discord service. Discord bot tokens remain in ignored `config.yaml`; shared OpenCode credentials remain in ignored `.env`. The npm package remains `private` until a release is reviewed and authorized. Publishing the GitHub repository alone does not make `npx open_cord` available; that requires a separate npm release. Check package-name availability again before publishing. Audit public history before release: `.gitignore` cannot remove tracked or historical content. Rotate any previously exposed shared-server password before exposing that server outside the local machine. A clean package install was checked on Windows; first-run setup and Discord/OpenCode operation on other people's machines have not been verified.
+`npm pack --dry-run --json` shows the allowlisted package contents. The npm release includes compiled code, launch scripts, example config, example env file, README, and LICENSE. Never publish local `config.yaml`, `.env`, `state.json`, backups, or logs. The npm package runs locally; it is not a hosted Discord service. The Discord token stays in ignored `config.yaml`; the optional shared-server password stays in ignored `.env`. `.gitignore` does not remove already-tracked or historical files. A clean package installation was checked on Windows; first-run Discord/OpenCode setup on other machines has not been verified.
 
 OpenCord is based on [joaogsleite/opencode-discord](https://github.com/joaogsleite/opencode-discord) (ISC). This repository starts with a new public history so local configuration and development notes are not included.

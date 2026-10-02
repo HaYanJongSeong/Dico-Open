@@ -1,19 +1,22 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
+import { parse } from 'yaml';
+import { configSchema } from '../src/config/schema.js';
 
 describe('publishing', () => {
   it('ships built entrypoints and excludes local secrets and handoff notes', () => {
     const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as {
-      name: string; private?: boolean; repository?: string; main: string; types: string; bin?: Record<string, string>; files?: string[]; scripts: Record<string, string>;
+      name: string; version: string; private?: boolean; repository?: string; main: string; types: string; bin?: Record<string, string>; files?: string[]; scripts: Record<string, string>;
     };
     const ignore = readFileSync(new URL('../.gitignore', import.meta.url), 'utf8');
     expect(pkg.main).toBe('dist/src/index.js');
     expect(pkg.types).toBe('dist/src/index.d.ts');
     expect(pkg.name).toBe('open_cord');
-    expect(pkg.repository).toBe('https://github.com/HaYanJongSeong/opencord');
-    expect(pkg.private).toBe(true); // Do not publish until release approval.
-    expect(pkg.bin?.opencord).toBe('dist/src/cli.js');
-    expect(Object.keys(pkg.bin ?? {})).toEqual(['opencord']); // npx open_cord selects the single executable.
+    expect(pkg.version).toBe('0.1.0');
+    expect(pkg.repository).toBe('https://github.com/HaYanJongSeong/Open_Cord');
+    expect(pkg.private).toBeUndefined();
+    expect(pkg.bin?.open_cord).toBe('dist/src/cli.js');
+    expect(Object.keys(pkg.bin ?? {})).toEqual(['open_cord']);
     expect(pkg.scripts.build).toBeTruthy();
     expect(pkg.files).toContain('dist/src/');
     expect(pkg.files).toContain('dist/scripts/discord/');
@@ -37,5 +40,21 @@ describe('publishing', () => {
   it('does not prefill a maintainer-specific project path in the public setup wizard', () => {
     const setup = readFileSync(new URL('../src/setup.ts', import.meta.url), 'utf8');
     expect(setup).not.toContain(String.raw`C:\\Project\\Default`);
+  });
+
+  it('ships a restricted single-channel example instead of an open guild channel', () => {
+    const config = parse(readFileSync(new URL('../config.example.yaml', import.meta.url), 'utf8')) as {
+      servers: Array<{ channels: Array<{ permissions: string; allowedUsers: string[] }> }>;
+    };
+    expect(config.servers).toHaveLength(1);
+    expect(config.servers[0]?.channels).toHaveLength(1);
+    expect(config.servers[0]?.channels[0]).toMatchObject({ permissions: 'interactive', allowedUsers: ['YOUR_DISCORD_USER_ID'] });
+    expect(configSchema.safeParse(config).success).toBe(true);
+  });
+
+  it('keeps setup-created channels private and requires permission approval', () => {
+    const setup = readFileSync(new URL('../src/setup.ts', import.meta.url), 'utf8');
+    expect(setup).toContain('id: guild.roles.everyone.id, type: OverwriteType.Role, deny: [PermissionFlagsBits.ViewChannel]');
+    expect(setup).toContain('allowedUsers: [userId], permissions: \'interactive\'');
   });
 });

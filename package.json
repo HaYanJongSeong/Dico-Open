@@ -1,13 +1,12 @@
 {
   "name": "open_cord",
-  "private": true,
-  "version": "1.0.0",
-  "description": "OpenCord: local OpenCode CLI v2 to Discord session bridge",
-  "repository": "https://github.com/HaYanJongSeong/opencord",
+  "version": "0.1.0",
+  "description": "Open_Cord bridges OpenCode CLI v2 sessions with Discord threads",
+  "repository": "https://github.com/HaYanJongSeong/Open_Cord",
   "type": "module",
   "main": "dist/src/index.js",
   "types": "dist/src/index.d.ts",
-  "bin": { "opencord": "dist/src/cli.js" },
+  "bin": { "open_cord": "dist/src/cli.js" },
   "files": ["dist/src/", "dist/scripts/discord/", "scripts/*.sh", "scripts/start-visible.cmd", "opencord.cmd", "config.example.yaml", ".env.example", "README.md", "LICENSE"],
   "engines": { "node": ">=24" },
   "scripts": {
@@ -31,7 +30,7 @@
     "discord:rename-channel": "node dist/scripts/discord/renameChannel.js",
     "discord:ensure-channel": "node dist/scripts/discord/ensureChannel.js"
   },
-  "keywords": [],
+  "keywords": ["opencode", "discord", "bridge"],
   "author": "",
   "license": "ISC",
   "packageManager": "pnpm@10.33.1",
