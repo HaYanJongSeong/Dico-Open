@@ -1,0 +1,6 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": { "rootDir": ".", "outDir": "dist", "declarationMap": false, "sourceMap": false },
+  "include": ["src/**/*.ts", "scripts/discord/**/*.ts"],
+  "exclude": ["src/**/*.test.ts", "scripts/**/*.test.ts", "node_modules", "dist"]
+}

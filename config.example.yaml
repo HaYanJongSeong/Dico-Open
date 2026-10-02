@@ -1,0 +1,57 @@
+# OpenCord configuration
+# Copy this file to config.yaml and fill in your values.
+# config.yaml is gitignored -- never commit your real token.
+#
+# Validated on startup with Zod. The bot will refuse to start if
+# required fields are missing or types are wrong.
+
+# (required) Your Discord bot token (https://discord.com/developers/applications)
+discordToken: "YOUR_BOT_TOKEN_HERE"
+
+# (required) List of Discord servers the bot operates in.
+servers:
+
+  - serverId: "111111111111111111"       # (required) Discord guild/server ID
+
+    # (required) Channel mappings for this server.
+    # Each entry binds a Discord text channel to a local project + agent config.
+    # Multiple channels can map to the same projectPath with different settings
+    # (e.g. a "build" channel and a "plan-only" channel for the same project).
+    channels:
+
+      # A channel with full agent access
+      - channelId: "123456789012345678"  # (required) Discord text channel ID
+        projectPath: "../your-project"      # (required) Local project path. Supports absolute paths, paths relative to this config file, and ~/ paths
+        defaultAgent: "build"            # (optional, default: "build") Agent used when /new omits the agent arg
+        allowAgentSwitch: true           # (optional, default: true) Whether /agent set and /new agent:X are permitted
+        allowedAgents: []                # (optional, default: []) Agent whitelist. Empty = all project agents available
+        allowedUsers: []                 # (optional, default: []) User ID whitelist. Empty = open to all channel members
+        permissions: "auto"              # (optional, default: "auto") "auto" = auto-grant all agent permission requests; "interactive" = show Allow/Reject buttons
+        questionTimeout: 300             # (optional, default: 300) Seconds to wait for user to answer an agent question before auto-rejecting
+        connectHistoryLimit: 10          # (optional, default: 30) Recent messages to request on /connect. 0 requests all available (currently at most 100).
+        autoConnect: false               # (optional, default: false) Auto-create Discord threads for new sessions created on this project (from TUI, CLI, etc.). At most one channel per projectPath should enable this.
+
+      # A channel locked to the plan agent on the same project
+      - channelId: "234567890123456789"
+        projectPath: "../your-project"
+        defaultAgent: "plan"
+        allowAgentSwitch: false          # /agent set is rejected; locked to defaultAgent
+        allowedUsers: []
+        permissions: "interactive"       # Show permission request buttons in this channel
+
+  - serverId: "222222222222222222"
+    channels:
+
+      # A restricted channel -- specific users only, limited agent selection
+      - channelId: "345678901234567890"
+        projectPath: "~/Developer/another-project"
+        defaultAgent: "build"
+        allowAgentSwitch: true
+        allowedAgents:                   # Only these agents can be selected
+          - "build"
+          - "plan"
+        allowedUsers:                    # Only these Discord users can interact
+          - "111111111111111111"
+          - "222222222222222222"
+
+# Model selection can also be set per channel using model: "provider/model".
