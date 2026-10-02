@@ -10,6 +10,8 @@ const logger = createLogger('QuestionHandler');
 export interface QuestionOption {
   label: string;
   description: string;
+  /** CLI v2 form value submitted for this option; defaults to `label`. */
+  value?: string;
 }
 
 /** OpenCode question information. */
@@ -26,24 +28,29 @@ export interface QuestionRequest {
   id: string;
   sessionID: string;
   questions: QuestionInfo[];
+  /** CLI v2 form field keys aligned with `questions`; indexes are used when absent. */
+  keys?: string[];
 }
+
+/** Answers keyed by CLI v2 form field key. */
+export type QuestionAnswerMap = Record<string, string | string[]>;
 
 /** OpenCode client subset required to answer questions. */
 export interface QuestionClient {
   question: {
     /**
      * Reply to an OpenCode question request.
-     * @param input - Request ID and collected answers.
+     * @param input - Request ID, session ID, and collected answers.
      * @returns OpenCode reply result.
      */
-    reply(input: { requestID: string; answers: string[][] }): Promise<unknown>;
+    reply(input: { requestID: string; sessionID: string; answer: QuestionAnswerMap }): Promise<unknown>;
 
     /**
      * Reject an OpenCode question request.
-     * @param input - Request ID to reject.
+     * @param input - Request and session IDs to reject.
      * @returns OpenCode reject result.
      */
-    reject(input: { requestID: string }): Promise<unknown>;
+    reject(input: { requestID: string; sessionID: string }): Promise<unknown>;
   };
 }
 
@@ -73,6 +80,8 @@ export interface QuestionHandlerOptions {
 interface PendingQuestionState {
   client: QuestionClient;
   requestID: string;
+  sessionID: string;
+  keys?: string[];
   questions: QuestionInfo[];
   currentIndex: number;
   collectedAnswers: string[][];
@@ -120,13 +129,13 @@ export class QuestionHandler {
     const request = this.extractRequest(event);
     const validationError = this.getValidationError(request);
     if (validationError) {
-      this.assertNoSdkError(await client.question.reject({ requestID: request.id }), ErrorCode.QUESTION_INVALID_ANSWER);
+      this.assertNoSdkError(await client.question.reject(this.rejectInput(request)), ErrorCode.QUESTION_INVALID_ANSWER);
       throw validationError;
     }
     const thread = this.options.getThread(threadId);
 
     if (!thread) {
-      this.assertNoSdkError(await client.question.reject({ requestID: request.id }), ErrorCode.QUESTION_TIMEOUT);
+      this.assertNoSdkError(await client.question.reject(this.rejectInput(request)), ErrorCode.QUESTION_TIMEOUT);
       return;
     }
 
@@ -134,6 +143,8 @@ export class QuestionHandler {
     const state: PendingQuestionState = {
       client,
       requestID: request.id,
+      sessionID: request.sessionID,
+      keys: request.keys,
       questions: request.questions,
       currentIndex: 0,
       collectedAnswers: [],
@@ -168,7 +179,7 @@ export class QuestionHandler {
     const thread = this.options.getThread(threadId);
     if (!thread) {
       this.clearPending(threadId);
-      this.assertNoSdkError(await state.client.question.reject({ requestID: state.requestID }), ErrorCode.QUESTION_TIMEOUT);
+      this.assertNoSdkError(await state.client.question.reject(this.rejectInput(state)), ErrorCode.QUESTION_TIMEOUT);
       return;
     }
 
@@ -195,10 +206,26 @@ export class QuestionHandler {
     }
 
     this.assertNoSdkError(
-      await state.client.question.reply({ requestID: state.requestID, answers: state.collectedAnswers }),
+      await state.client.question.reply({
+        requestID: state.requestID,
+        sessionID: state.sessionID,
+        answer: this.buildAnswerMap(state),
+      }),
       ErrorCode.QUESTION_INVALID_ANSWER,
     );
     this.clearPending(threadId);
+  }
+
+  private rejectInput(source: Pick<QuestionRequest, 'id' | 'sessionID'> | PendingQuestionState): { requestID: string; sessionID: string } {
+    return { requestID: 'requestID' in source ? source.requestID : source.id, sessionID: source.sessionID };
+  }
+
+  private buildAnswerMap(state: PendingQuestionState): QuestionAnswerMap {
+    return Object.fromEntries(state.questions.map((question, index) => {
+      const key = state.keys?.[index] ?? String(index);
+      const values = state.collectedAnswers[index] ?? [];
+      return [key, question.multiple ? values : (values[0] ?? '')];
+    }));
   }
 
   /**
@@ -231,7 +258,8 @@ export class QuestionHandler {
       return false;
     }
     const request = value as Partial<QuestionRequest>;
-    return typeof request.id === 'string' && typeof request.sessionID === 'string' && Array.isArray(request.questions);
+    return typeof request.id === 'string' && typeof request.sessionID === 'string' && Array.isArray(request.questions)
+      && (request.keys === undefined || (Array.isArray(request.keys) && request.keys.every((key) => typeof key === 'string')));
   }
 
   private getValidationError(request: QuestionRequest): BotError | undefined {
@@ -268,7 +296,8 @@ export class QuestionHandler {
     }
 
     const option = value as Partial<QuestionOption>;
-    return typeof option.label === 'string' && typeof option.description === 'string';
+    return typeof option.label === 'string' && typeof option.description === 'string'
+      && (option.value === undefined || typeof option.value === 'string');
   }
 
   private resetTimer(threadId: string, state: PendingQuestionState): void {
@@ -289,7 +318,7 @@ export class QuestionHandler {
     }
 
     this.pending.delete(threadId);
-    this.assertNoSdkError(await state.client.question.reject({ requestID: state.requestID }), ErrorCode.QUESTION_TIMEOUT);
+    this.assertNoSdkError(await state.client.question.reject(this.rejectInput(state)), ErrorCode.QUESTION_TIMEOUT);
     const thread = this.options.getThread(threadId);
     if (thread) {
       await thread.send(suppressLinkPreviews('질문 응답 시간이 만료되었습니다. 에이전트가 답변 없이 계속합니다.'));
@@ -341,7 +370,7 @@ export class QuestionHandler {
         if (!option) {
           return undefined;
         }
-        labels.push(option.label);
+        labels.push(option.value ?? option.label);
       }
       return labels;
     }

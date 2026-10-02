@@ -1102,7 +1102,7 @@ describe('startBot', () => {
       { request: { id: 'question-1', sessionID: 'session-1', questions: [{ header: 'Choose', question: 'Proceed?', options: [{ label: 'Yes', description: 'Continue' }] }] } },
       questionClient,
     );
-    expect(questionClient.question.reject).toHaveBeenCalledWith({ requestID: 'question-1' });
+    expect(questionClient.question.reject).toHaveBeenCalledWith({ requestID: 'question-1', sessionID: 'session-1' });
 
     expect(captured.permissionHandler).toBeDefined();
     await (captured.permissionHandler as { handlePermissionEvent(threadId: string, event: unknown, client: unknown): Promise<void> }).handlePermissionEvent(

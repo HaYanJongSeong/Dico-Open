@@ -89,6 +89,26 @@ export function createServerClient(url: string, headers: Record<string, string> 
     });
     return await response.json();
   }) as never;
+  const formRoute = (sessionID: string, formID: string, route = '') => `${url}/api/session/${encodeURIComponent(sessionID)}/form/${encodeURIComponent(formID)}${route}`;
+  const formQuestion = {
+    reply: (async (options: { requestID: string; sessionID: string; answer: Record<string, string | string[]> }) => {
+      const response = await fetch(formRoute(options.sessionID, options.requestID, '/reply'), {
+        method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ answer: options.answer }),
+      });
+      if (!response.ok) return { error: await response.text() || response.statusText };
+      return response.status === 204 ? undefined : await response.json();
+    }) as never,
+    reject: (async (options: { requestID: string; sessionID: string }) => {
+      const response = await fetch(formRoute(options.sessionID, options.requestID), { method: 'DELETE', headers });
+      if (!response.ok) return { error: await response.text() || response.statusText };
+      return response.status === 204 ? undefined : await response.json();
+    }) as never,
+  };
+  // The SDK exposes `question` as an own getter on the client and on `session`, so replace both.
+  for (const target of [client, client.session, v2Root, v2Root.session]) {
+    Object.defineProperty(target, 'question', { configurable: true, enumerable: true, value: formQuestion });
+  }
   v2Root.session.permission.reply = (async (options: { sessionID: string; requestID: string; reply: 'once' | 'always' | 'reject' }) => {
     const response = await fetch(`${url}/api/session/${encodeURIComponent(options.sessionID)}/permission/${encodeURIComponent(options.requestID)}/reply`, {
       method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' },

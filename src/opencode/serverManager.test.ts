@@ -128,6 +128,35 @@ describe('createServerClient', () => {
     }));
   });
 
+  it('exposes the form question adapter on the client root used by the stream handler', () => {
+    const client = createServerClient('http://127.0.0.1:49374', { Authorization: 'Basic test' });
+
+    expect(typeof client.question.reply).toBe('function');
+    expect(typeof client.question.reject).toBe('function');
+    expect((client as any).session.question).toBe((client as any).question);
+    expect((client as any).v2Root.session.question).toBe((client as any).question);
+  });
+
+  it('adapts question replies to the current CLI v2 form answer route', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(null, { status: 204 }));
+    const client = createServerClient('http://127.0.0.1:49374', { Authorization: 'Basic test' });
+
+    await (client as any).session.question.reply({ sessionID: 'ses_1', requestID: 'frm_1', answer: { choice: 'yes' } });
+
+    expect(fetchMock).toHaveBeenCalledWith('http://127.0.0.1:49374/api/session/ses_1/form/frm_1/reply', expect.objectContaining({
+      method: 'POST', body: JSON.stringify({ answer: { choice: 'yes' } }),
+    }));
+  });
+
+  it('adapts question rejection to the current CLI v2 form cancel route', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(null, { status: 204 }));
+    const client = createServerClient('http://127.0.0.1:49374', { Authorization: 'Basic test' });
+
+    await (client as any).session.question.reject({ sessionID: 'ses_1', requestID: 'frm_1' });
+
+    expect(fetchMock).toHaveBeenCalledWith('http://127.0.0.1:49374/api/session/ses_1/form/frm_1', expect.objectContaining({ method: 'DELETE' }));
+  });
+
   it('adapts abort to the current interrupt route', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(null, { status: 204 }));
     const client = createServerClient('http://127.0.0.1:49374', { Authorization: 'Basic test' });

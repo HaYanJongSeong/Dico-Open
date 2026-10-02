@@ -114,7 +114,11 @@ describe('QuestionHandler', () => {
 
     expect(sends).toHaveLength(2);
     expect(sends[1]?.content).toContain('**Reason**');
-    expect(client.question.reply).toHaveBeenCalledWith({ requestID: 'request-1', answers: [['No'], ['custom']] });
+    expect(client.question.reply).toHaveBeenCalledWith({
+      requestID: 'request-1',
+      sessionID: 'session-1',
+      answer: { '0': 'No', '1': 'custom' },
+    });
     expect(client.question.reject).not.toHaveBeenCalled();
     expect(handler.hasPendingQuestion('thread-1')).toBe(false);
   });
@@ -137,7 +141,7 @@ describe('QuestionHandler', () => {
 
     await vi.advanceTimersByTimeAsync(100);
 
-    expect(client.question.reject).toHaveBeenCalledWith({ requestID: 'request-1' });
+    expect(client.question.reject).toHaveBeenCalledWith({ requestID: 'request-1', sessionID: 'session-1' });
     expect(client.question.reply).not.toHaveBeenCalled();
     expect(handler.hasPendingQuestion('thread-1')).toBe(false);
     expect(sends.at(-1)?.content).toBe('질문 응답 시간이 만료되었습니다. 에이전트가 답변 없이 계속합니다.');
@@ -197,6 +201,62 @@ describe('QuestionHandler', () => {
     expect(sends[1]?.content).toBe('잘못된 답변입니다. 표시된 선택지 중 하나를 선택하세요. *(참조: corr-1)*');
     expect(sends[2]?.content).toContain('**Pick one**');
     expect(handler.hasPendingQuestion('thread-1')).toBe(true);
+  });
+
+  it('answers form-backed questions with field keys and option values', async () => {
+    const { thread } = createThread();
+    const handler = createHandler({}, thread);
+    const client = createClient();
+
+    await handler.handleQuestionEvent(
+      'thread-1',
+      {
+        id: 'frm_1',
+        sessionID: 'session-1',
+        keys: ['tools', 'scope'],
+        questions: [
+          {
+            header: 'Tools',
+            question: 'Which tools may run?',
+            options: [
+              { label: 'shell', description: 'Run commands', value: 'shell' },
+              { label: 'write', description: 'Write files', value: 'write' },
+            ],
+            multiple: true,
+          },
+          { header: 'Scope', question: 'Where?', options: [], custom: true },
+        ],
+      },
+      client,
+    );
+
+    await handler.handleQuestionAnswer('thread-1', 'a,b');
+    await handler.handleQuestionAnswer('thread-1', 'src only');
+
+    expect(client.question.reply).toHaveBeenCalledWith({
+      requestID: 'frm_1',
+      sessionID: 'session-1',
+      answer: { tools: ['shell', 'write'], scope: 'src only' },
+    });
+  });
+
+  it('clears pending state when the question settles elsewhere', async () => {
+    const { thread } = createThread();
+    const handler = createHandler({}, thread);
+    const client = createClient();
+
+    await handler.handleQuestionEvent(
+      'thread-1',
+      { id: 'frm_1', sessionID: 'session-1', keys: ['choice'], questions: [{ header: 'Pick', question: 'Choose', options: [{ label: 'Yes', description: 'Approve' }] }] },
+      client,
+    );
+    expect(handler.hasPendingQuestion('thread-1')).toBe(true);
+
+    handler.clearPending('thread-1');
+
+    expect(handler.hasPendingQuestion('thread-1')).toBe(false);
+    await handler.handleQuestionAnswer('thread-1', 'a');
+    expect(client.question.reply).not.toHaveBeenCalled();
   });
 
   it('rejects visibly when final question reply returns an SDK error envelope', async () => {
@@ -299,7 +359,7 @@ describe('QuestionHandler', () => {
         client,
       ),
     ).rejects.toBeInstanceOf(BotError);
-    expect(client.question.reject).toHaveBeenCalledWith({ requestID: 'request-1' });
+    expect(client.question.reject).toHaveBeenCalledWith({ requestID: 'request-1', sessionID: 'session-1' });
     expect(thread.send).not.toHaveBeenCalled();
     expect(handler.hasPendingQuestion('thread-1')).toBe(false);
   });
@@ -321,7 +381,7 @@ describe('QuestionHandler', () => {
       ),
     ).rejects.toMatchObject({ code: ErrorCode.QUESTION_INVALID_ANSWER });
 
-    expect(client.question.reject).toHaveBeenCalledWith({ requestID: 'request-1' });
+    expect(client.question.reject).toHaveBeenCalledWith({ requestID: 'request-1', sessionID: 'session-1' });
     expect(thread.send).not.toHaveBeenCalled();
     expect(handler.hasPendingQuestion('thread-1')).toBe(false);
   });
@@ -343,7 +403,7 @@ describe('QuestionHandler', () => {
       ),
     ).rejects.toMatchObject({ code: ErrorCode.QUESTION_INVALID_ANSWER });
 
-    expect(client.question.reject).toHaveBeenCalledWith({ requestID: 'request-1' });
+    expect(client.question.reject).toHaveBeenCalledWith({ requestID: 'request-1', sessionID: 'session-1' });
     expect(thread.send).not.toHaveBeenCalled();
     expect(handler.hasPendingQuestion('thread-1')).toBe(false);
   });

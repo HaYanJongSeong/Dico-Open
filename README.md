@@ -197,6 +197,8 @@ Thread-level flow:
 | `/restart` | Channel or thread | Confirm and restart a server started by this bot process. Shared and recovered servers are refused without stopping them. It does not restart the bot. |
 | `/diff` | Thread | Show OpenCode session diff. |
 
+OpenCode가 확인을 요구하면(`question` 도구) 스레드에 알파벳 선택지가 게시됩니다. 스레드에서 `a`, `b` 또는 직접 작성한 답변을 보내면 다음 항목으로 넘어가고, 마지막 답변이 OpenCode로 제출됩니다. 선택지가 26개를 넘거나 5분 안에 답변이 없으면 요청이 취소되고 스레드에 알림이 옵니다. CLI에서 이미 답변한 요청은 `form.replied`로 감지되어 Discord의 대기 상태가 해제됩니다.
+
 ## Runtime Files
 
 | Path | Purpose |

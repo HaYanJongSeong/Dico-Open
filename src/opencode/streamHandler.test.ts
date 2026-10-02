@@ -1121,6 +1121,97 @@ describe('StreamHandler', () => {
     expect(permissionHandler.handlePermissionEvent).toHaveBeenCalledWith('thread-1', expect.objectContaining({ type: 'permission.asked' }), client);
   });
 
+  it('routes CLI v2 form.created events to the question handler with field keys and option values', async () => {
+    const { thread } = createThread();
+    const questionHandler = { handleQuestionEvent: vi.fn(async () => undefined), handleQuestionSettled: vi.fn() };
+    const handler = createHandler({ questionHandler }, thread);
+    const client = createClient([
+      stream([
+        {
+          directory: '/repo',
+          payload: {
+            type: 'form.created',
+            properties: {
+              form: {
+                id: 'frm_1',
+                sessionID: 'session-1',
+                title: 'Verify',
+                fields: [
+                  {
+                    key: 'choice',
+                    type: 'string',
+                    title: 'Pick one',
+                    description: 'Choose an option',
+                    options: [{ value: 'yes', label: 'Yes', description: 'Approve' }],
+                  },
+                ],
+              },
+            },
+          },
+        },
+      ]),
+    ]);
+
+    await handler.subscribe('thread-1', 'session-1', client);
+    await handler.waitForIdle('thread-1');
+
+    expect(questionHandler.handleQuestionEvent).toHaveBeenCalledWith('thread-1', expect.objectContaining({
+      request: expect.objectContaining({
+        id: 'frm_1',
+        sessionID: 'session-1',
+        keys: ['choice'],
+        questions: [expect.objectContaining({
+          header: 'Pick one',
+          question: 'Choose an option',
+          options: [expect.objectContaining({ label: 'Yes', value: 'yes' })],
+        })],
+      }),
+    }), client);
+  });
+
+  it('ignores form events from other sessions', async () => {
+    const { thread } = createThread();
+    const questionHandler = { handleQuestionEvent: vi.fn(async () => undefined), handleQuestionSettled: vi.fn() };
+    const handler = createHandler({ questionHandler }, thread);
+    const client = createClient([
+      stream([
+        {
+          directory: '/repo',
+          payload: {
+            type: 'form.created',
+            properties: { form: { id: 'frm_other', sessionID: 'session-other', title: 'Other', fields: [] } },
+          },
+        },
+        {
+          directory: '/repo',
+          payload: { type: 'form.replied', properties: { id: 'frm_other', sessionID: 'session-other', answer: {} } },
+        },
+      ]),
+    ]);
+
+    await handler.subscribe('thread-1', 'session-1', client);
+    await handler.waitForIdle('thread-1');
+
+    expect(questionHandler.handleQuestionEvent).not.toHaveBeenCalled();
+    expect(questionHandler.handleQuestionSettled).not.toHaveBeenCalled();
+  });
+
+  it('clears the pending question when a form.replied event settles the request', async () => {
+    const { thread } = createThread();
+    const questionHandler = { handleQuestionEvent: vi.fn(async () => undefined), handleQuestionSettled: vi.fn() };
+    const handler = createHandler({ questionHandler }, thread);
+    const client = createClient([
+      stream([
+        { directory: '/repo', payload: { type: 'form.replied', properties: { id: 'frm_1', sessionID: 'session-1', answer: { choice: 'yes' } } } },
+      ]),
+    ]);
+
+    await handler.subscribe('thread-1', 'session-1', client);
+    await handler.waitForIdle('thread-1');
+
+    expect(questionHandler.handleQuestionSettled).toHaveBeenCalledWith('thread-1');
+  });
+
   it('continues streaming when table handling fails', async () => {
     const { thread, sends } = createThread();
     const tableHandler = { handleTable: vi.fn(async () => {

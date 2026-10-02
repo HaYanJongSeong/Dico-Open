@@ -792,6 +792,9 @@ function asQuestionEventDelegate(questionHandler: QuestionHandler): QuestionEven
     handleQuestionEvent: async (threadId, event, client) => {
       await questionHandler.handleQuestionEvent(threadId, event, client as never);
     },
+    handleQuestionSettled: (threadId) => {
+      questionHandler.clearPending(threadId);
+    },
   };
 }
 

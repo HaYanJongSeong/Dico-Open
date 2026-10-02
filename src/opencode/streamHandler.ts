@@ -4,6 +4,14 @@ import { suppressLinkPreviews } from '../discord/messageOptions.js';
 
 const logger = createLogger('StreamHandler');
 
+/** Legacy question request shape produced from a CLI v2 form. */
+interface FormQuestionRequest {
+  id: string;
+  sessionID: string;
+  questions: { header: string; question: string; options: { label: string; description: string; value: string }[]; multiple: boolean; custom: boolean }[];
+  keys: string[];
+}
+
 /** OpenCode global event shape used by the stream handler. */
 export interface GlobalEventLike {
   directory?: string;
@@ -83,6 +91,12 @@ export interface QuestionEventDelegate {
    * @returns Completion once the event is handled.
    */
   handleQuestionEvent(threadId: string, event: unknown, client: OpenCodeStreamClient): Promise<void>;
+
+  /**
+   * Clear a pending question answered outside Discord, such as a CLI v2 form reply.
+   * @param threadId - Discord thread ID whose pending question is settled.
+   */
+  handleQuestionSettled?(threadId: string): void;
 }
 
 /** Delegate for OpenCode permission events. */
@@ -627,9 +641,23 @@ export class StreamHandler {
       return;
     }
 
-    if (payload.type === 'question.asked') {
+    if (payload.type === 'question.asked' || payload.type === 'form.created') {
       this.stopTyping(context.state);
-      await this.options.questionHandler.handleQuestionEvent(context.threadId, getPayloadProperties(payload) ?? payload, context.client);
+      const request = payload.type === 'form.created' ? toFormQuestionRequest(payload) : undefined;
+      if (payload.type === 'form.created' && request === undefined) {
+        logger.warn('Ignoring malformed form.created event', { threadId: context.threadId, sessionId: context.sessionId });
+        return;
+      }
+      await this.options.questionHandler.handleQuestionEvent(
+        context.threadId,
+        request ?? getPayloadProperties(payload) ?? payload,
+        context.client,
+      );
+      return;
+    }
+
+    if (payload.type === 'form.replied') {
+      this.options.questionHandler.handleQuestionSettled?.(context.threadId);
       return;
     }
 
@@ -1036,6 +1064,8 @@ function isSessionScopedEvent(type: string): boolean {
     || type === 'message.part.updated'
     || type === 'todo.updated'
     || type === 'question.asked'
+    || type === 'form.created'
+    || type === 'form.replied'
     || type === 'permission.asked'
     || type === 'session.idle'
     || type === 'session.updated'
@@ -1054,9 +1084,14 @@ function getSessionId(payload: GlobalEventLike['payload']): string | undefined {
     return sessionId;
   }
 
-  const request = getPayloadRecord(payload, 'request');
+const request = getPayloadRecord(payload, 'request');
   if (request && typeof request.sessionID === 'string') {
     return request.sessionID;
+  }
+
+  const form = getPayloadRecord(payload, 'form');
+  if (form && typeof form.sessionID === 'string') {
+    return form.sessionID;
   }
 
   const part = getPayloadRecord(payload, 'part');
@@ -1352,6 +1387,46 @@ export function getEventStream(source: OpenCodeEventSource): AsyncIterable<Globa
   return normalizeEventStream(stream);
 }
 
+/** Convert a CLI v2 `form.created` payload into the legacy question request shape. */
+function toFormQuestionRequest(payload: GlobalEventLike['payload']): { request: FormQuestionRequest } | undefined {
+  const form = getPayloadRecord(payload, 'form');
+  if (!form || typeof form.id !== 'string' || typeof form.sessionID !== 'string' || !Array.isArray(form.fields)) {
+    return undefined;
+  }
+
+  const fields = form.fields.filter(isRecord);
+  return {
+    request: {
+      id: form.id,
+      sessionID: form.sessionID,
+      keys: fields.map((field) => (typeof field.key === 'string' ? field.key : String(field.key ?? ''))),
+      questions: fields.map(toFormQuestionInfo),
+    },
+  };
+}
+
+function toFormQuestionInfo(field: Record<string, unknown>): {
+  header: string;
+  question: string;
+  options: { label: string; description: string; value: string }[];
+  multiple: boolean;
+  custom: boolean;
+} {
+  const title = typeof field.title === 'string' ? field.title : String(field.key ?? '??');
+  const description = typeof field.description === 'string' ? field.description : title;
+  const options = Array.isArray(field.options) ? field.options.filter(isRecord) : [];
+  return {
+    header: title,
+    question: description,
+    options: options.map((option) => ({
+      label: typeof option.label === 'string' ? option.label : String(option.value ?? ''),
+      description: typeof option.description === 'string' ? option.description : '',
+      value: typeof option.value === 'string' ? option.value : String(option.label ?? ''),
+    })),
+    multiple: field.type === 'multiselect',
+    custom: field.custom !== false,
+  };
+}
 function getSessionTitle(payload: GlobalEventLike['payload']): string | undefined {
   for (const candidate of [payload.info, payload.properties]) {
     if (!isRecord(candidate)) {
