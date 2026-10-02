@@ -1,5 +1,7 @@
 # OpenCord
 
+기존 Kimaki가 현재 OpenCode CLI v2 환경에서 동작하지 않아 바이브 코딩으로 만든 Discord 브릿지입니다.
+
 OpenCode CLI v2 ↔ Discord bridge. It maps Discord channels to local OpenCode projects and root sessions to threads. Configured projects reconnect automatically; `/new` and `/connect` remain available.
 
 This repository is a Node.js and TypeScript project using `discord.js` v14 and `@opencode-ai/sdk/v2`.
