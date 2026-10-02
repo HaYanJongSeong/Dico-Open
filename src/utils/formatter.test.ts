@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { Worker } from 'node:worker_threads';
-import { detectTable, formatHistoryMessage, splitCodeBlockMessages, splitMessage } from './formatter.js';
+import { detectTable, formatHistoryMessage, formatMarkdownTables, splitCodeBlockMessages, splitMessage } from './formatter.js';
 
 describe('splitMessage', () => {
   it('returns single chunk for short messages', () => {
@@ -153,6 +153,32 @@ describe('detectTable', () => {
 
   it('rejects text without separator row', () => {
     expect(detectTable('| A | B |\n| 1 | 2 |')).toBe(false);
+  });
+});
+
+describe('formatMarkdownTables', () => {
+  it('wraps a markdown table in a code fence so columns stay aligned', () => {
+    const result = formatMarkdownTables('before\n\n| 이름 | 값 |\n| --- | --- |\n| a | 1 |\n\nafter');
+
+    expect(result).toContain('```\n| 이름 | 값 |\n| --- | --- |\n| a | 1 |\n```');
+    expect(result).toContain('before');
+    expect(result).toContain('after');
+    // Discord has no table renderer; the fence is what keeps columns aligned.
+    expect(result.split('\n').filter((line) => line.startsWith('```')).length).toBe(2);
+  });
+
+  it('leaves text without tables untouched', () => {
+    expect(formatMarkdownTables('평범한 문장')).toBe('평범한 문장');
+  });
+
+  it('leaves fenced code blocks untouched', () => {
+    const text = '```ts\n| A | B |\n| --- | --- |\n| 1 | 2 |\n```';
+    expect(formatMarkdownTables(text)).toBe(text);
+  });
+
+  it('keeps tables inside existing code fences from being double wrapped', () => {
+    const text = '```\n| A | B |\n| --- | --- |\n| 1 | 2 |\n```';
+    expect(formatMarkdownTables(text)).toBe(text);
   });
 });
 

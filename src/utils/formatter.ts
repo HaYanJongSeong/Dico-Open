@@ -46,6 +46,67 @@ export function splitMessage(text: string): string[] {
 }
 
 /**
+ * Wrap markdown tables in code fences so Discord keeps column alignment.
+ * Text already inside a code fence is left as-is.
+ * @param text - Streamed or replayed assistant text.
+ * @returns Text with fenced tables.
+ */
+export function formatMarkdownTables(text: string): string {
+  if (!detectTable(text)) {
+    return text;
+  }
+
+  const lines = text.split('\n');
+  const output: string[] = [];
+  let index = 0;
+
+  while (index < lines.length) {
+    const line = lines[index] ?? '';
+    if (isCodeFenceLine(line.trim())) {
+      output.push(line);
+      index += 1;
+      // Copy the fenced body verbatim so tables inside code stay untouched.
+      while (index < lines.length) {
+        const body = lines[index] ?? '';
+        output.push(body);
+        index += 1;
+        if (isCodeFenceLine(body.trim())) {
+          break;
+        }
+      }
+      continue;
+    }
+
+    const tableEnd = findTableEnd(lines, index);
+    if (tableEnd > index) {
+      output.push(formatCodeBlockMessage(lines.slice(index, tableEnd).join('\n'), ''));
+      index = tableEnd;
+      continue;
+    }
+
+    output.push(line);
+    index += 1;
+  }
+
+  return output.join('\n');
+}
+
+/** Return the index just past a markdown table starting at `start`, or `start` when there is none. */
+function findTableEnd(lines: string[], start: number): number {
+  const header = lines[start]?.trim() ?? '';
+  const separator = lines[start + 1]?.trim() ?? '';
+  if (!header.startsWith('|') || !/^\|[\s\-:|]+\|$/.test(separator)) {
+    return start;
+  }
+
+  let index = start + 2;
+  while ((lines[index]?.trim() ?? '').startsWith('|')) {
+    index += 1;
+  }
+  return index;
+}
+
+/**
  * Format text as one or more Discord-safe fenced code block messages.
  * @param text - Full code block body.
  * @param language - Markdown code fence language.

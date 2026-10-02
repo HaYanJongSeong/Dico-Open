@@ -1,9 +1,16 @@
+import { MessageFlags } from 'discord.js';
 import { suppressLinkPreviews } from '../discord/messageOptions.js';
 import { BotError, ErrorCode } from '../utils/errors.js';
 import { createLogger } from '../utils/logger.js';
 
 const DEFAULT_TIMEOUT_MS = 300_000;
 const MAX_LETTERED_OPTIONS = 26;
+/** Discord allows 25 options per select menu; one slot is reserved for the chat escape hatch. */
+const DISCORD_SELECT_OPTION_LIMIT = 25;
+const OTHER_OPTION_VALUE = 'other';
+/** Discord allows 5 buttons per action row; poll buttons are used for short option lists only. */
+const DISCORD_BUTTONS_PER_ROW = 5;
+const DISCORD_POLL_BUTTON_LIMIT = 5;
 const logger = createLogger('QuestionHandler');
 
 /** OpenCode question option. */
@@ -54,6 +61,45 @@ export interface QuestionClient {
   };
 }
 
+/** Discord message payload that may carry a question select menu. */
+export interface QuestionPayload {
+  embeds?: unknown[];
+  components?: QuestionActionRow[];
+  content?: string;
+  flags?: number;
+}
+
+/** Discord action row holding a select menu or poll buttons. */
+export interface QuestionActionRow {
+  type: 1;
+  components: (QuestionSelectMenu | QuestionPollButton)[];
+}
+
+/** Discord string select menu for one question. */
+export interface QuestionSelectMenu {
+  type: 3;
+  custom_id: string;
+  placeholder: string;
+  options: QuestionSelectOption[];
+  min_values: number;
+  max_values: number;
+}
+
+/** Discord button used for poll-style answering. */
+export interface QuestionPollButton {
+  type: 2;
+  custom_id: string;
+  label: string;
+  style: 1 | 2;
+}
+
+/** One selectable choice; `value` is the option index or `other`. */
+export interface QuestionSelectOption {
+  label: string;
+  value: string;
+  description?: string;
+}
+
 /** Discord thread subset required by question handling. */
 export interface QuestionThread {
   /**
@@ -61,7 +107,58 @@ export interface QuestionThread {
    * @param payload - Message content or embed payload.
    * @returns Discord API send result.
    */
-  send(payload: string | { embeds?: unknown[]; content?: string; flags?: number }): Promise<unknown>;
+  send(payload: string | QuestionPayload): Promise<QuestionMessage>;
+}
+
+/** Discord message returned for a posted question. */
+export interface QuestionMessage {
+  /**
+   * Create a collector for question button clicks.
+   * @param options - Collector timeout options.
+   * @returns Component collector.
+   */
+  createMessageComponentCollector?(options: { time: number }): QuestionCollector;
+
+  /**
+   * Replace the question message after answering or timeout.
+   * @param payload - Replacement message payload.
+   * @returns Discord API edit result.
+   */
+  edit?(payload: QuestionPayload): Promise<unknown>;
+}
+
+/** Discord component collector subset required by question handling. */
+export interface QuestionCollector {
+  /**
+   * Register a collect handler for button clicks.
+   * @param event - Collector event name.
+   * @param callback - Handler invoked with the collected interaction.
+   * @returns This collector.
+   */
+  on(event: 'collect', callback: (interaction: QuestionInteraction) => void | Promise<void>): QuestionCollector;
+
+  /**
+   * Stop the collector once the question is answered.
+   * @param reason - Optional stop reason.
+   * @returns Nothing.
+   */
+  stop?(reason?: string): void;
+}
+
+/** Discord select-menu interaction subset required by question handling. */
+export interface QuestionInteraction {
+  customId: string;
+  /** Selected option values, in the order the user picked them. */
+  values: string[];
+  user?: { id: string };
+  reply?(payload: { content: string; flags: number }): Promise<unknown>;
+  deferUpdate?(): Promise<unknown>;
+  editReply?(payload: QuestionPayload): Promise<unknown>;
+}
+
+/** Channel configuration consulted before answering a question by button. */
+export interface QuestionChannelConfig {
+  allowedUsers?: string[];
 }
 
 /** Options for constructing a question handler. */
@@ -72,6 +169,13 @@ export interface QuestionHandlerOptions {
    * @returns Thread when available, otherwise undefined.
    */
   getThread(threadId: string): QuestionThread | undefined;
+
+  /**
+   * Resolve channel configuration by Discord thread ID.
+   * @param threadId - Discord thread ID.
+   * @returns Channel config when available, otherwise undefined.
+   */
+  getChannelConfig?(threadId: string): QuestionChannelConfig | undefined;
   timeoutMs?: number;
   setTimeout?: (callback: () => void, delay: number) => unknown;
   clearTimeout?: (timer: unknown) => void;
@@ -79,13 +183,23 @@ export interface QuestionHandlerOptions {
 
 interface PendingQuestionState {
   client: QuestionClient;
+  threadId: string;
   requestID: string;
   sessionID: string;
   keys?: string[];
   questions: QuestionInfo[];
   currentIndex: number;
-  collectedAnswers: string[][];
+  /** Answers indexed by question; a slot stays undefined until answered. */
+  collectedAnswers: (string[] | undefined)[];
   timer?: unknown;
+  messages: Map<number, QuestionMessage>;
+  collectors: (QuestionCollector | undefined)[];
+  /** Question index waiting for a typed chat answer after choosing `other`. */
+  awaitingChatAnswer?: number;
+  /** Guards against a second submit while the first one is in flight. */
+  submitting?: boolean;
+  /** Poll-button selections per question index, holding option values. */
+  pollSelections: string[][];
 }
 
 interface QuestionEventLike {
@@ -142,16 +256,24 @@ export class QuestionHandler {
     this.clearPending(threadId);
     const state: PendingQuestionState = {
       client,
+      threadId,
       requestID: request.id,
       sessionID: request.sessionID,
       keys: request.keys,
       questions: request.questions,
       currentIndex: 0,
-      collectedAnswers: [],
+      collectedAnswers: new Array<string[] | undefined>(request.questions.length).fill(undefined),
+      messages: new Map(),
+      collectors: new Array<QuestionCollector | undefined>(request.questions.length).fill(undefined),
+      pollSelections: Array.from({ length: request.questions.length }, () => [] as string[]),
     };
     this.pending.set(threadId, state);
     this.resetTimer(threadId, state);
-    await this.showCurrentQuestion(thread, state);
+    for (let index = 0; index < request.questions.length; index += 1) {
+      state.currentIndex = index;
+      await this.showCurrentQuestion(thread, state);
+    }
+    state.currentIndex = 0;
   }
 
   /**
@@ -183,8 +305,13 @@ export class QuestionHandler {
       return;
     }
 
-    const question = state.questions[state.currentIndex];
-    if (!question) {
+    // A typed answer targets the question picked via `other`, else the first unanswered one.
+    const index = state.awaitingChatAnswer ?? state.collectedAnswers.findIndex((answer) => answer === undefined);
+    const question = index >= 0 ? state.questions[index] : undefined;
+    if (index === undefined || index < 0 || !question) {
+      return;
+    }
+    if (state.collectedAnswers[index]) {
       return;
     }
 
@@ -192,28 +319,13 @@ export class QuestionHandler {
     if (!answers) {
       const suffix = correlationId ? ` *(참조: ${correlationId})*` : '';
       await thread.send(suppressLinkPreviews(`잘못된 답변입니다. 표시된 선택지 중 하나를 선택하세요.${suffix}`));
-      await this.showCurrentQuestion(thread, state);
       return;
     }
 
-    state.collectedAnswers.push(answers);
-    state.currentIndex += 1;
-
-    if (state.currentIndex < state.questions.length) {
-      this.resetTimer(threadId, state);
-      await this.showCurrentQuestion(thread, state);
-      return;
-    }
-
-    this.assertNoSdkError(
-      await state.client.question.reply({
-        requestID: state.requestID,
-        sessionID: state.sessionID,
-        answer: this.buildAnswerMap(state),
-      }),
-      ErrorCode.QUESTION_INVALID_ANSWER,
-    );
-    this.clearPending(threadId);
+    state.awaitingChatAnswer = undefined;
+    this.recordAnswer(state, index, answers);
+    await state.messages.get(index)?.edit?.({ content: this.answerContent(question, answers), components: [] });
+    await this.submitIfComplete(state);
   }
 
   private rejectInput(source: Pick<QuestionRequest, 'id' | 'sessionID'> | PendingQuestionState): { requestID: string; sessionID: string } {
@@ -228,6 +340,8 @@ export class QuestionHandler {
     }));
   }
 
+  
+
   /**
    * Clear a pending question and its timeout for a Discord thread.
    * @param threadId - Discord thread ID to clear.
@@ -237,6 +351,9 @@ export class QuestionHandler {
     const state = this.pending.get(threadId);
     if (state?.timer) {
       this.clearTimer(state.timer);
+    }
+    for (const collector of state?.collectors ?? []) {
+      collector?.stop?.('cleared');
     }
     this.pending.delete(threadId);
   }
@@ -318,6 +435,9 @@ export class QuestionHandler {
     }
 
     this.pending.delete(threadId);
+    for (const collector of state.collectors) {
+      collector?.stop?.('time');
+    }
     this.assertNoSdkError(await state.client.question.reject(this.rejectInput(state)), ErrorCode.QUESTION_TIMEOUT);
     const thread = this.options.getThread(threadId);
     if (thread) {
@@ -330,7 +450,257 @@ export class QuestionHandler {
     if (!question) {
       return;
     }
-    await thread.send(suppressLinkPreviews(this.formatQuestion(question)));
+
+    const menu = this.createMenu(question, state.currentIndex, state.requestID);
+    if (!menu) {
+      await thread.send(suppressLinkPreviews(this.formatQuestion(question)));
+      return;
+    }
+
+    // Short option lists get poll-style buttons; long ones fall back to the select menu.
+    const pollRows = this.createPollButtons(question, state.currentIndex, state.requestID);
+    const rows = pollRows ?? [{ type: 1, components: [menu] } as QuestionActionRow];
+    const message = await thread.send(suppressLinkPreviews({
+      content: this.formatMenuQuestion(question, pollRows !== undefined),
+      components: rows,
+    }));
+    state.messages.set(state.currentIndex, message);
+    this.collectMenu(state, message, question, state.currentIndex);
+  }
+
+  /** Poll-style buttons for short option lists; a submit button closes multi-select. */
+  private createPollButtons(question: QuestionInfo, index: number, requestID: string): QuestionActionRow[] | undefined {
+    if (question.options.length === 0 || question.options.length > DISCORD_POLL_BUTTON_LIMIT) {
+      return undefined;
+    }
+
+    const rows: QuestionActionRow[] = [];
+    for (let start = 0; start < question.options.length; start += DISCORD_BUTTONS_PER_ROW) {
+      rows.push({
+        type: 1,
+        components: question.options.slice(start, start + DISCORD_BUTTONS_PER_ROW).map((option, offset) => ({
+          type: 2,
+          custom_id: `p:${requestID}:${index}:${start + offset}`,
+          label: (option.label || `선택지 ${start + offset + 1}`).slice(0, 80),
+          style: 2,
+        })),
+      });
+    }
+
+    if (question.multiple) {
+      rows.push({
+        type: 1,
+        components: [{ type: 2, custom_id: `s:${requestID}:${index}`, label: '답변 제출', style: 1 }],
+      });
+    }
+
+    return rows;
+  }
+
+  /** Create one select menu; options are capped at Discord's 25-item limit. */
+  private createMenu(question: QuestionInfo, index: number, requestID: string): QuestionSelectMenu | undefined {
+    if (question.options.length === 0) {
+      return undefined;
+    }
+
+    const options: QuestionSelectOption[] = question.options.slice(0, DISCORD_SELECT_OPTION_LIMIT).map((option, optionIndex) => ({
+      label: option.label.slice(0, 100) || `선택지 ${optionIndex + 1}`,
+      value: String(optionIndex),
+      description: option.description.slice(0, 100),
+    }));
+    if (question.custom !== false && options.length < DISCORD_SELECT_OPTION_LIMIT) {
+      options.push({ label: '직접 입력', value: OTHER_OPTION_VALUE, description: '스레드에 답변을 직접 입력합니다.' });
+    }
+
+    return {
+      type: 3,
+      custom_id: `q:${requestID}:${index}`,
+      placeholder: '답변을 선택하세요',
+      options,
+      min_values: 1,
+      max_values: question.multiple ? options.length : 1,
+    };
+  }
+
+  private parseMenuId(customId: string): { requestID: string; index: number } | undefined {
+    const parts = customId.split(':');
+    if (parts.length !== 3 || parts[0] !== 'q') {
+      return undefined;
+    }
+    const index = Number(parts[2]);
+    return Number.isInteger(index) ? { requestID: parts[1] ?? '', index } : undefined;
+  }
+
+  /** Route one collected interaction to the select-menu or poll-button handler. */
+  private async handleInteraction(state: PendingQuestionState, question: QuestionInfo, index: number, interaction: QuestionInteraction): Promise<void> {
+    if (this.pending.get(state.threadId) !== state) {
+      return;
+    }
+    if (interaction.customId.startsWith('q:')) {
+      await this.handleMenu(state, question, index, interaction);
+      return;
+    }
+    await this.handlePollClick(state, question, index, interaction);
+  }
+
+  private collectMenu(state: PendingQuestionState, message: QuestionMessage, question: QuestionInfo, index: number): void {
+    const collector = message.createMessageComponentCollector?.({ time: this.timeoutMs });
+    if (!collector) {
+      return;
+    }
+
+    state.collectors[index] = collector;
+    collector.on('collect', (interaction) => this.handleInteraction(state, question, index, interaction).catch((error: unknown) => {
+      logger.warn('Question input handling failed', { requestID: state.requestID, error });
+    }));
+  }
+
+  private async handlePollClick(state: PendingQuestionState, question: QuestionInfo, index: number, interaction: QuestionInteraction): Promise<void> {
+    const config = this.options.getChannelConfig?.(state.threadId);
+    if (!config || !interaction.user || (config.allowedUsers?.length && !config.allowedUsers.includes(interaction.user.id))) {
+      await interaction.reply?.({ content: '이 질문에 답할 수 없습니다.', flags: MessageFlags.Ephemeral });
+      return;
+    }
+
+    if (state.collectedAnswers[index]) {
+      await interaction.reply?.({ content: '이미 답변한 질문입니다.', flags: MessageFlags.Ephemeral });
+      return;
+    }
+
+    if (interaction.customId.startsWith('s:')) {
+      const answers = [...(state.pollSelections[index] ?? [])];
+      if (answers.length === 0) {
+        await interaction.reply?.({ content: '선택한 항목이 없습니다. 먼저 항목을 선택하세요.', flags: MessageFlags.Ephemeral });
+        return;
+      }
+      await interaction.deferUpdate?.();
+      this.recordAnswer(state, index, answers);
+      await interaction.editReply?.({ content: this.answerContent(question, answers), components: [] });
+      await this.submitIfComplete(state);
+      return;
+    }
+
+    const parts = interaction.customId.split(':');
+    const optionIndex = parts[0] === 'p' && parts[3] !== undefined ? Number(parts[3]) : Number.NaN;
+    const option = question.options[optionIndex];
+    if (!option) {
+      return;
+    }
+
+    const chosen = state.pollSelections[index] ?? [];
+    const value = option.value ?? option.label;
+    const next = chosen.includes(value)
+      ? chosen.filter((entry) => entry !== value)
+      : [...chosen, value];
+    state.pollSelections[index] = next;
+
+    if (!question.multiple) {
+      await interaction.deferUpdate?.();
+      this.recordAnswer(state, index, [value]);
+      await interaction.editReply?.({ content: this.answerContent(question, [value]), components: [] });
+      await this.submitIfComplete(state);
+      return;
+    }
+
+    // ponytail: toggles only surface in the ephemeral notice; reflowing rows would need a message rebuild.
+    await interaction.reply?.({
+      content: next.length === 0 ? '선택을 모두 해제했습니다.' : `선택: ${next.join(', ')} — 답변 제출을 누르세요.`,
+      flags: MessageFlags.Ephemeral,
+    });
+  }
+
+  private async handleMenu(state: PendingQuestionState, question: QuestionInfo, index: number, interaction: QuestionInteraction): Promise<void> {
+    if (this.pending.get(state.threadId) !== state) {
+      return;
+    }
+
+    const config = this.options.getChannelConfig?.(state.threadId);
+    if (!config || !interaction.user || (config.allowedUsers?.length && !config.allowedUsers.includes(interaction.user.id))) {
+      await interaction.reply?.({ content: '이 질문에 답할 수 없습니다.', flags: MessageFlags.Ephemeral });
+      return;
+    }
+
+    const parsed = this.parseMenuId(interaction.customId);
+    if (!parsed || parsed.requestID !== state.requestID || parsed.index !== index || state.collectedAnswers[index]) {
+      await interaction.reply?.({ content: '이미 답변했거나 만료된 질문입니다.', flags: MessageFlags.Ephemeral });
+      return;
+    }
+
+    const other = interaction.values.includes(OTHER_OPTION_VALUE);
+    if (other) {
+      await interaction.deferUpdate?.();
+      state.awaitingChatAnswer = index;
+      return;
+    }
+
+    const answers = this.mapSelectedValues(question, interaction.values);
+    if (!answers) {
+      await interaction.reply?.({ content: '선택지를 다시 선택하세요.', flags: MessageFlags.Ephemeral });
+      return;
+    }
+
+    await interaction.deferUpdate?.();
+    this.recordAnswer(state, index, answers);
+    await interaction.editReply?.({ content: this.answerContent(question, answers), components: [] });
+    await this.submitIfComplete(state);
+  }
+
+  private mapSelectedValues(question: QuestionInfo, values: string[]): string[] | undefined {
+    const answers: string[] = [];
+    for (const value of values) {
+      if (value === OTHER_OPTION_VALUE) {
+        return undefined;
+      }
+      const option = question.options[Number(value)];
+      if (!option) {
+        return undefined;
+      }
+      answers.push(option.value ?? option.label);
+    }
+    return answers.length > 0 ? answers : undefined;
+  }
+
+  private recordAnswer(state: PendingQuestionState, index: number, answers: string[]): void {
+    state.collectedAnswers[index] = answers;
+    const collector = state.collectors[index];
+    collector?.stop?.('answered');
+    state.collectors[index] = undefined;
+  }
+
+  /** Answered message body: question context plus the recorded choice. */
+  private answerContent(question: QuestionInfo | undefined, answers: string[]): string {
+    const context = question === undefined ? '' : `${question.header}\n${question.question}\n`;
+    return `${context}✓ _${answers.join(', ')}_`;
+  }
+
+  private async submitIfComplete(state: PendingQuestionState): Promise<void> {
+    if (state.submitting || state.collectedAnswers.filter(Boolean).length < state.questions.length) {
+      return;
+    }
+    // Keep pending state until OpenCode accepts the reply so a failed submit can be retried.
+    state.submitting = true;
+    try {
+      this.assertNoSdkError(
+        await state.client.question.reply({
+          requestID: state.requestID,
+          sessionID: state.sessionID,
+          answer: this.buildAnswerMap(state),
+        }),
+        ErrorCode.QUESTION_INVALID_ANSWER,
+      );
+    } catch (error) {
+      state.submitting = false;
+      throw error;
+    }
+    this.clearPending(state.threadId);
+  }
+
+  private formatMenuQuestion(question: QuestionInfo, isPoll = false): string {
+    const hint = isPoll
+      ? (question.multiple ? '필요한 항목을 고른 뒤 답변 제출을 누르세요.' : '누를 버튼을 고르세요.')
+      : (question.multiple ? '여러 개를 선택할 수 있습니다.' : '하나를 선택하세요.');
+    const chat = question.custom === false ? '' : '\n스레드에 알파벳이나 답변을 직접 입력해도 됩니다.';
+    return `**${question.header}**\n${question.question}\n${hint}${chat}`;
   }
 
   private formatQuestion(question: QuestionInfo): string {

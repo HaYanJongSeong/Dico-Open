@@ -1447,6 +1447,102 @@ describe('startBot', () => {
     expect(streamHandler.subscribe).not.toHaveBeenCalled();
   });
 
+  it('re-attaches the shared OpenCode server so its threads resubscribe after a restart', async () => {
+    const previousUrl = process.env.OPENCODE_SHARED_SERVER_URL;
+    const previousProject = process.env.OPENCODE_SHARED_SERVER_PROJECT;
+    process.env.OPENCODE_SHARED_SERVER_URL = 'http://127.0.0.1:1234';
+    process.env.OPENCODE_SHARED_SERVER_PROJECT = '/project/shared';
+    const server: ServerState = {
+      port: 1234,
+      pid: 0,
+      url: 'http://127.0.0.1:1234',
+      startedAt: 10,
+      status: 'running',
+    };
+    const session: SessionState = {
+      sessionId: 'session-shared',
+      guildId: 'guild-1',
+      channelId: 'channel-1',
+      projectPath: '/project/shared',
+      agent: 'build',
+      model: null,
+      createdBy: 'user-1',
+      createdAt: 30,
+      lastActivityAt: 40,
+      status: 'active',
+    };
+    const state: BotState = {
+      version: 1,
+      servers: { '/project/shared': server },
+      sessions: { 'thread-shared': session },
+      queues: {},
+    };
+    const client = { id: 'shared-client' };
+    const stateManager = {
+      load: vi.fn(),
+      getState: vi.fn(() => state),
+      setServer: vi.fn((projectPath: string, nextServer: ServerState) => {
+        state.servers[projectPath] = nextServer;
+      }),
+      getServer: vi.fn((projectPath: string) => state.servers[projectPath]),
+      removeServer: vi.fn(),
+      getSession: vi.fn((threadId: string) => state.sessions[threadId]),
+      setSession: vi.fn((threadId: string, nextSession: SessionState) => {
+        state.sessions[threadId] = nextSession;
+      }),
+      removeSession: vi.fn(),
+      getQueue: vi.fn((threadId: string) => state.queues[threadId] ?? []),
+      clearQueue: vi.fn(),
+    };
+    const streamHandler = { subscribe: vi.fn() };
+    const serverManager = {
+      ensureRunning: vi.fn(async () => {
+        stateManager.setServer('/project/shared', server);
+        return client;
+      }),
+      getClient: vi.fn(() => client),
+    };
+
+    try {
+      await startBot({
+        configLoader: {
+          load: vi.fn(),
+          getConfig: vi.fn(() => ({
+            discordToken: 'token',
+            servers: [{ serverId: 'guild-1', channels: [{ channelId: 'channel-1', projectPath: '/project/shared' }] }],
+          })),
+        },
+        stateManager,
+        serverManager,
+        cacheManager: { refresh: vi.fn() },
+        streamHandler,
+        createDiscordClient: vi.fn(() => ({ login: vi.fn() })),
+        deployCommands: vi.fn(),
+        getCommandDefinitions: vi.fn(() => []),
+        preflight: vi.fn(),
+        isPidAlive: vi.fn(() => false),
+        createClient: vi.fn(() => client),
+        healthCheck: vi.fn(() => true),
+        threadExists: vi.fn(() => true),
+      });
+    } finally {
+      if (previousUrl === undefined) delete process.env.OPENCODE_SHARED_SERVER_URL;
+      else process.env.OPENCODE_SHARED_SERVER_URL = previousUrl;
+      if (previousProject === undefined) delete process.env.OPENCODE_SHARED_SERVER_PROJECT;
+      else process.env.OPENCODE_SHARED_SERVER_PROJECT = previousProject;
+    }
+
+    expect(serverManager.ensureRunning).toHaveBeenCalledWith('/project/shared');
+    expect(streamHandler.subscribe).toHaveBeenCalledWith(
+      'thread-shared',
+      'session-shared',
+      client,
+      expect.any(Set),
+      '/project/shared',
+    );
+    expect(state.sessions['thread-shared']?.status).toBe('active');
+  });
+
   it('auto-connects only unattached sessions found during startup reconciliation', async () => {
     const knownSession: SessionState = {
       sessionId: 'known-session',

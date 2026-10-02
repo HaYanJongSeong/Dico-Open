@@ -566,6 +566,20 @@ describe('StreamHandler', () => {
     expect(sends).toEqual(['Mention `\u200b`` inline without starting a code block.']);
   });
 
+  it('renders streamed markdown tables inside a code fence', async () => {
+    const { thread, sends, edits } = createThread();
+    const handler = createHandler({}, thread);
+    const table = '| 이름 | 값 |\n| --- | --- |\n| a | 1 |';
+    const client = createClient([stream([textDelta(table)])]);
+
+    await handler.subscribe('thread-1', 'session-1', client);
+    await handler.waitForIdle('thread-1');
+
+    const delivered = [...sends, ...edits].join('\n');
+    expect(delivered).toContain('```\n| 이름 | 값 |');
+    expect(delivered).toContain('| a | 1 |\n```');
+  });
+
   it('detects tables and delegates table handling', async () => {
     const { thread } = createThread();
     const tableHandler = { handleTable: vi.fn(async () => undefined) };
@@ -1225,7 +1239,7 @@ describe('StreamHandler', () => {
     await handler.waitForIdle('thread-1');
 
     expect(tableHandler.handleTable).toHaveBeenCalledWith('thread-1', table);
-    expect(sends).toEqual([table]);
+    expect(sends).toEqual(['```\n| Name | Value |\n| --- | --- |\n| A | 1 |\n```']);
   });
 
   it('throttles message edits to the configured interval', async () => {

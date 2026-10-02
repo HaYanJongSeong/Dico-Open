@@ -238,7 +238,10 @@ export async function startBot(options: StartBotOptions = {}): Promise<StartedBo
   const cacheManager = options.cacheManager ?? new CacheManager({ logger: startupLogger });
   const discordClient = (options.createDiscordClient ?? defaultCreateDiscordClient)(config.discordToken);
   const threadResolver = createDiscordThreadResolver(discordClient, startupLogger);
-  const questionHandler = new QuestionHandler({ getThread: (threadId) => threadResolver.getCached(threadId) as QuestionThread | undefined });
+  const questionHandler = new QuestionHandler({
+    getThread: (threadId) => threadResolver.getCached(threadId) as QuestionThread | undefined,
+    getChannelConfig: (threadId) => getChannelConfigForThread(stateManager, config, threadId),
+  });
   const permissionHandler = new PermissionHandler({
     getThread: (threadId) => threadResolver.getCached(threadId) as PermissionThread | undefined,
     getChannelConfig: (threadId) => getChannelConfigForThread(stateManager, config, threadId),
@@ -945,7 +948,7 @@ interface ServerRecoveryDependencies {
   isPidAlive(pid: number): boolean;
   killPid(pid: number): void;
   logger: Pick<Logger, 'warn'>;
-  serverManager?: Pick<ServerManagerLike, 'registerRecovered'>;
+  serverManager?: Pick<ServerManagerLike, 'ensureRunning' | 'registerRecovered'>;
 }
 
 interface SessionRecoveryDependencies {
@@ -978,7 +981,14 @@ async function recoverServers(
     const sharedProject = process.env.OPENCODE_SHARED_SERVER_PROJECT;
     const isShared = sharedUrl !== undefined && sharedProject === projectPath;
     if (isShared) {
-      stateManager.setServer(projectPath, { ...server, status: 'stopped' });
+      // ponytail: the shared server outlives this bot, so re-attach it instead of marking it stopped,
+      // which would drop the event stream of every thread bound to that project after a restart.
+      await warnOnFailure(dependencies.logger, 'Failed to re-attach shared OpenCode server', { projectPath }, async () => {
+        const client = await dependencies.serverManager?.ensureRunning(projectPath);
+        if (client !== undefined) {
+          recoveredClients.set(projectPath, client);
+        }
+      });
       continue;
     }
 

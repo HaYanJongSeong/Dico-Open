@@ -4,7 +4,7 @@ import type { FilePartInput, TextPartInput } from '@opencode-ai/sdk/v2';
 import type { SessionState } from '../state/types.js';
 import { suppressLinkPreviews } from '../discord/messageOptions.js';
 import { BotError, ErrorCode } from '../utils/errors.js';
-import { formatHistoryMessage, splitMessage } from '../utils/formatter.js';
+import { formatHistoryMessage, formatMarkdownTables, splitMessage } from '../utils/formatter.js';
 
 type MaybeWrapped<T> = T | { data: T };
 type SessionLike = { id?: string; sessionID?: string } | null | undefined;
@@ -586,7 +586,7 @@ export class SessionBridge {
       if (messageId && dedupeSet.has(messageId)) continue;
       const content = getMessageContent(message);
       if (!content.trim()) continue;
-      for (const chunk of splitMessage(formatHistoryMessage('assistant', content))) {
+      for (const chunk of splitMessage(formatMarkdownTables(formatHistoryMessage('assistant', content)))) {
         if (!chunk.trim()) continue;
         await thread.send(suppressLinkPreviews(chunk));
       }

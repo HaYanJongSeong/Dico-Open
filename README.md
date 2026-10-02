@@ -141,6 +141,7 @@ Notes:
 ## Large sessions and Discord limits
 
 - Discord limits normal message content to 2,000 characters. The bot splits long live replies and history messages automatically.
+- Discord has no table renderer. Markdown tables in replies and replayed history are wrapped in a code fence so columns stay aligned. Text already inside a code fence is left unchanged.
 - The current history reader fetches at most the latest 100 messages in one read; it does not support a working cursor. `connectHistoryLimit: 0` does **not** guarantee full history. If the saved message marker is older than those 100 messages, recovery skips that gap rather than risking duplicate messages.
 - Discord does not impose a fixed practical message-count limit per thread. Do not create a new thread only because a thread has many messages.
 - Discord may archive inactive threads. Re-open the thread in Discord before sending a new prompt if needed.
@@ -197,7 +198,9 @@ Thread-level flow:
 | `/restart` | Channel or thread | Confirm and restart a server started by this bot process. Shared and recovered servers are refused without stopping them. It does not restart the bot. |
 | `/diff` | Thread | Show OpenCode session diff. |
 
-OpenCode가 확인을 요구하면(`question` 도구) 스레드에 알파벳 선택지가 게시됩니다. 스레드에서 `a`, `b` 또는 직접 작성한 답변을 보내면 다음 항목으로 넘어가고, 마지막 답변이 OpenCode로 제출됩니다. 선택지가 26개를 넘거나 5분 안에 답변이 없으면 요청이 취소되고 스레드에 알림이 옵니다. CLI에서 이미 답변한 요청은 `form.replied`로 감지되어 Discord의 대기 상태가 해제됩니다.
+OpenCode가 확인을 요구하면(`question` 도구) 질문 하나당 메시지 하나가 게시됩니다. 선택지가 5개 이하면 투표 방식 버튼이 붙고, 그보다 많으면 선택 메뉴가 붙습니다. 투표 버튼은 누르면 바로 답변으로 기록되고, 다중 선택은 항목을 고른 뒤 **답변 제출** 버튼을 누릅니다. 선택 메뉴는 고르면 즉시 반영됩니다. 답을 기록한 메시지는 `✓ 선택 내용` 으로 바뀌고 입력 수단이 사라집니다. 마지막 질문까지 답하면 한 번에 OpenCode로 제출됩니다. 스레드에 `a`, `b`, 또는 답변을 그대로 보내도 됩니다. 선택지가 26개를 넘거나 5분 안에 답변이 없으면 요청이 취소되고 스레드에 알림이 옵니다. CLI에서 이미 답변한 요청은 `form.replied`로 감지되어 Discord의 대기 상태가 해제됩니다.
+
+메뉴 선택은 채널의 `allowedUsers`에 있는 계정에 대해서만 반영됩니다. 다른 계정의 클릭은 임시 메시지로 거절됩니다.
 
 ## Runtime Files
 

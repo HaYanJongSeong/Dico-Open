@@ -1,4 +1,4 @@
-import { detectTable, splitMessage } from '../utils/formatter.js';
+import { detectTable, formatMarkdownTables, splitMessage } from '../utils/formatter.js';
 import { createLogger } from '../utils/logger.js';
 import { suppressLinkPreviews } from '../discord/messageOptions.js';
 
@@ -937,7 +937,7 @@ export class StreamHandler {
       return;
     }
 
-    const chunks = splitMessage(context.aggregate || '').filter((chunk) => chunk.trim());
+    const chunks = splitMessage(formatMarkdownTables(context.aggregate || '')).filter((chunk) => chunk.trim());
     if (chunks.length === 0 && context.runningTools.size === 0) return;
     for (let index = context.sentChunks; index < chunks.length - 1; index += 1) {
       if (context.currentMessage) {
