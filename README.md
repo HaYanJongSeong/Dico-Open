@@ -18,7 +18,7 @@ Typical flow:
 4. Send normal messages in the thread to talk to the OpenCode agent.
 5. Use slash commands in the thread for agent/model selection, interruption, diffs, and synchronization.
 
-> The npm package is `open_cord`. **Do not run `npx opencord`**: that name belongs to an unrelated project.
+> **npm 게시 대기 중:** 지금은 아래 소스 설치를 사용하세요. 게시 후 `npx open_cord`로 실행할 수 있습니다. **`npx opencord`는 다른 프로젝트이므로 실행하지 마세요.**
 
 ## Requirements
 
@@ -31,7 +31,7 @@ Typical flow:
 | Discord message content intent | Required for thread passthrough messages. |
 | Local project paths | The bot must run on the same machine where configured projects exist. |
 
-## npm 설치 (권장)
+## npm 설치 (게시 후)
 
 1. [Node.js](https://nodejs.org/) 24 이상과 [OpenCode CLI](https://opencode.ai/docs/) v2를 설치합니다. 터미널에서 `node --version`과 `opencode --version`을 확인합니다. OpenCode가 실행되지 않으면 먼저 설치하거나 작업 폴더의 `.env`에서 `OPENCODE_EXECUTABLE`을 지정합니다.
 2. [Discord Developer Portal](https://discord.com/developers/applications)에서 앱과 봇을 만들고 토큰을 복사합니다. **Message Content Intent**를 켭니다. OAuth2 URL Generator에서 `bot`, `applications.commands` 범위를 선택해 서버에 초대합니다. 봇에는 **View Channel**, **Read Message History**, **Send Messages**, **Create Public Threads**, **Send Messages in Threads** 권한이 필요합니다. 사용자와 봇만 접근 가능한 텍스트 채널을 만드세요. Discord 사용자 설정에서 개발자 모드를 켠 뒤 서버·채널·본인 계정의 ID를 우클릭해 복사합니다.
