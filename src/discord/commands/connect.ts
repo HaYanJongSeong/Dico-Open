@@ -27,6 +27,11 @@ interface ThreadCreatableChannel {
   };
 }
 
+interface InteractionChannelLike extends Partial<ThreadCreatableChannel>, Partial<ThreadLike> {
+  isThread?: () => boolean;
+  parentId?: string | null;
+}
+
 /** Dependencies for the /connect command handler. */
 export interface ConnectCommandDependencies {
   stateManager: StateReader;
@@ -45,17 +50,17 @@ export function createConnectCommandHandler(deps: ConnectCommandDependencies): C
     const sessionId = interaction.options.getString('session', true);
     assertUnattached(deps.stateManager.getState(), sessionId);
 
-    const channel = requireThreadCreatableChannel(interaction);
+    const currentThread = getCurrentThread(interaction.channel);
     const title = normalizeTitle(interaction.options.getString('title'), sessionId);
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     const client = await deps.serverManager.ensureRunning(channelConfig.projectPath) as OpencodeSessionClient;
-    const thread = await channel.threads.create({ name: title, autoArchiveDuration: 1440, reason: 'OpenCode session attach' });
+    const thread = currentThread ?? await createThread(interaction, title);
 
     await deps.sessionBridge.connectToSession({
       client,
       threadId: thread.id,
       guildId: requireGuildId(interaction),
-      channelId: interaction.channelId,
+      channelId: channelConfig.channelId,
       projectPath: channelConfig.projectPath,
       sessionId,
       agent: channelConfig.defaultAgent ?? 'build',
@@ -76,6 +81,23 @@ function requireChannelConfig(context: InteractionContext): ChannelConfig {
   return context.channelConfig;
 }
 
+function getCurrentThread(channel: unknown): ThreadLike | undefined {
+  const current = channel as InteractionChannelLike | null;
+  if (current?.isThread?.() !== true) return undefined;
+  if (!current.id || typeof current.send !== 'function') {
+    throw new BotError(ErrorCode.DISCORD_API_ERROR, '현재 스레드를 사용할 수 없습니다.');
+  }
+  return current as ThreadLike;
+}
+
+async function createThread(interaction: ChatInputCommandInteraction, title: string): Promise<ThreadLike> {
+  const channel = interaction.channel as Partial<ThreadCreatableChannel> | null;
+  if (!channel?.threads?.create) {
+    throw new BotError(ErrorCode.DISCORD_API_ERROR, '스레드를 만들 수 있는 채널에서만 사용할 수 있습니다.');
+  }
+  return channel.threads.create({ name: title, autoArchiveDuration: 1440, reason: 'OpenCode session attach' });
+}
+
 function assertUnattached(state: BotState, sessionId: string): void {
   const attached = Object.values(state.sessions).some((session) => session.sessionId === sessionId && session.status !== 'ended');
   if (attached) {
@@ -89,15 +111,6 @@ function requireGuildId(interaction: ChatInputCommandInteraction): string {
   }
 
   return interaction.guildId;
-}
-
-function requireThreadCreatableChannel(interaction: ChatInputCommandInteraction): ThreadCreatableChannel {
-  const channel = interaction.channel as Partial<ThreadCreatableChannel> | null;
-  if (!channel?.threads?.create) {
-    throw new BotError(ErrorCode.DISCORD_API_ERROR, 'This command can only be used in a channel that supports threads.');
-  }
-
-  return channel as ThreadCreatableChannel;
 }
 
 function normalizeTitle(title: string | null, sessionId: string): string {

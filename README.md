@@ -183,7 +183,7 @@ Thread-level flow:
 | Command | Context | Purpose |
 | --- | --- | --- |
 | `/new` | Channel | Create a new OpenCode session thread. |
-| `/connect` | Channel | Attach a Discord thread to an existing OpenCode session. |
+| `/connect` | Channel or thread | In a channel, create a thread for an existing session. In a thread, attach that current thread. |
 | `/agent set` | Thread | Change the active session agent. |
 | `/agent list` | Channel or thread | List available agents. |
 | `/model set` | Thread | Change the active session model. |

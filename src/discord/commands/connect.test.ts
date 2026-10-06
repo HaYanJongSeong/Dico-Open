@@ -5,9 +5,9 @@ import type { BotState } from '../../state/types.js';
 import { ErrorCode } from '../../utils/errors.js';
 import { createConnectCommandHandler, type ConnectCommandDependencies } from './connect.js';
 
-function createInteraction(options: { channel?: unknown; sessionId?: string; title?: string | null } = {}): ChatInputCommandInteraction {
+function createInteraction(options: { channel?: unknown; channelId?: string; sessionId?: string; title?: string | null } = {}): ChatInputCommandInteraction {
   return {
-    channelId: 'channel-1',
+    channelId: options.channelId ?? 'channel-1',
     guildId: 'guild-1',
     user: { id: 'user-1' },
     channel: options.channel ?? { threads: { create: vi.fn(async () => ({ id: 'thread-1', send: vi.fn() })) } },
@@ -68,6 +68,28 @@ describe('createConnectCommandHandler', () => {
 
     expect(deps.sessionBridge.connectToSession).toHaveBeenCalledWith(expect.objectContaining({
       model: 'google/gemini-3.5-flash',
+    }));
+  });
+
+  it('connects the current Discord thread without creating another thread', async () => {
+    const thread = {
+      id: 'thread-existing',
+      parentId: 'channel-1',
+      isThread: () => true,
+      send: vi.fn(async () => undefined),
+    };
+    const deps = createDeps();
+
+    await createConnectCommandHandler(deps)(
+      createInteraction({ channel: thread, channelId: 'thread-existing' }),
+      { correlationId: 'corr-1', channelConfig },
+    );
+
+    expect(deps.serverManager.ensureRunning).toHaveBeenCalledWith('/repo');
+    expect(deps.sessionBridge.connectToSession).toHaveBeenCalledWith(expect.objectContaining({
+      threadId: 'thread-existing',
+      channelId: 'channel-1',
+      thread,
     }));
   });
 
