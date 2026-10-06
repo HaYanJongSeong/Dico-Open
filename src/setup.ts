@@ -103,7 +103,7 @@ async function main(): Promise<void> {
       if (!inputPath) throw new Error('OpenCode 프로젝트 경로가 필요합니다.');
       const projectPath = resolve(inputPath);
       const channelId = await ensureProjectChannel(client, guildId, userId, projectPath);
-      projects.push({ channelId, projectPath, defaultAgent: 'build', allowedUsers: [userId], permissions: 'interactive', autoConnect: true, connectHistoryLimit: 30 });
+      projects.push({ channelId, projectPath, defaultAgent: 'build', allowedUsers: [userId], permissions: 'interactive', autoConnect: false, connectHistoryLimit: 30 });
       console.log(`채널 연결 완료: ${basename(projectPath)} (${channelId})`);
     } while ((await ask('다른 프로젝트도 추가할까요? (y/N)', 'N')).toLowerCase() === 'y');
   } finally {

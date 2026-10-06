@@ -46,7 +46,7 @@ servers:
         projectPath: "C:/path/to/your/project"
         allowedUsers: ["YOUR_DISCORD_USER_ID"]
         permissions: interactive
-        autoConnect: true
+        autoConnect: false
 ```
 
 `projectPath`는 봇이 실행되는 컴퓨터의 **존재하는** 프로젝트 폴더입니다. macOS/Linux에서는 `/home/you/project`처럼 절대 경로를 사용하세요. `allowedUsers`는 봇 사용만 제한합니다. **채널 읽기 권한은 Discord에서 별도로 제한**하세요. 서버 관리자는 여전히 접근할 수 있습니다. `interactive`는 OpenCode 권한 요청을 Discord 승인 버튼으로 표시합니다.
@@ -77,7 +77,7 @@ pnpm build
 pnpm start
 ```
 
-On Windows, double-click `opencord.cmd` instead (or run `.\opencord.cmd` in PowerShell). It opens a visible terminal and retries after errors. Start only one bot instance. Test `/help` in the mapped channel, then `/new` or create an OpenCode root session and set `autoConnect: true` for its channel.
+On Windows, double-click `opencord.cmd` instead (or run `.\opencord.cmd` in PowerShell). It opens a visible terminal and retries after errors. Start only one bot instance. Test `/help` in the mapped channel, then `/new`. Set `autoConnect: true` only when you intentionally want every externally created OpenCode session to get a Discord thread.
 
 The Discord bot token is currently stored in **local `config.yaml`, not an environment variable**. Both `config.yaml` and `.env` are excluded from the npm package and ignored by git. For a pre-existing shared OpenCode server, copy `.env.example` to `.env` and set `OPENCODE_SERVER_PASSWORD`, `OPENCODE_SHARED_SERVER_URL`, and `OPENCODE_SHARED_SERVER_PROJECT`. The CLI reads `.env` from the current working directory before loading bot modules; existing environment variables take precedence. Never upload local config, state, credentials, backups, or logs. Ignoring files does not remove anything already committed to repository history.
 

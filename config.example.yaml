@@ -8,4 +8,4 @@ servers:
         projectPath: "../your-project"
         allowedUsers: ["YOUR_DISCORD_USER_ID"]
         permissions: interactive
-        autoConnect: true
+        autoConnect: false
