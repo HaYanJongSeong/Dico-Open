@@ -917,12 +917,18 @@ function createAutocompleteHandler(dependencies: RuntimeHandlerDependencies): Au
           // Autocomplete should degrade to the last cached sessions if refresh fails.
         }
       }
+      const attachedSessionIds = new Set(
+        Object.values(dependencies.stateManager.getState().sessions)
+          .filter((session) => session.status !== 'ended')
+          .map((session) => session.sessionId),
+      );
       return cacheManager.getSessions(channelConfig.projectPath)
         .map((session) => {
           const sessionId = getSessionId(session);
           return { name: sessionId ? getSessionTitle(session, sessionId) : undefined, value: sessionId };
         })
         .filter((choice): choice is { name: string; value: string } => Boolean(choice.name && choice.value))
+        .filter((choice) => !attachedSessionIds.has(choice.value))
         .filter((choice) => choice.name.toLowerCase().includes(value.toLowerCase()))
         .slice(0, 25);
     }

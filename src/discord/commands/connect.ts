@@ -101,7 +101,7 @@ async function createThread(interaction: ChatInputCommandInteraction, title: str
 function assertUnattached(state: BotState, sessionId: string): void {
   const attached = Object.values(state.sessions).some((session) => session.sessionId === sessionId && session.status !== 'ended');
   if (attached) {
-    throw new BotError(ErrorCode.SESSION_ALREADY_ATTACHED, `Session ${sessionId} is already attached to a Discord thread.`, { sessionId });
+    throw new BotError(ErrorCode.SESSION_ALREADY_ATTACHED, `세션 \`${sessionId}\`은 이미 Discord 스레드에 연결되어 있습니다.`, { sessionId });
   }
 }
 

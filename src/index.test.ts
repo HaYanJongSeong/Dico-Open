@@ -557,11 +557,39 @@ describe('startBot', () => {
   });
 
   it('refreshes sessions before returning /connect autocomplete choices', async () => {
-    const state: BotState = { version: 1, servers: {}, sessions: {}, queues: {} };
-    const client = { session: { list: vi.fn(async () => [{ id: 'session-new', title: 'Recent session', directory: '/project/one' }]) } };
+    const state: BotState = {
+      version: 1,
+      servers: {},
+      sessions: {
+        'thread-attached': {
+          sessionId: 'session-attached',
+          guildId: 'guild-1',
+          channelId: 'channel-1',
+          projectPath: '/project/one',
+          agent: 'build',
+          model: null,
+          createdBy: 'user-1',
+          createdAt: 1,
+          lastActivityAt: 1,
+          status: 'inactive',
+        },
+      },
+      queues: {},
+    };
+    const client = {
+      session: {
+        list: vi.fn(async () => [
+          { id: 'session-attached', title: 'Already attached', directory: '/project/one' },
+          { id: 'session-new', title: 'Recent session', directory: '/project/one' },
+        ]),
+      },
+    };
     const cacheManager = {
       refresh: vi.fn(async () => undefined),
-      getSessions: vi.fn(() => [{ id: 'session-new', title: 'Recent session', directory: '/project/one' }]),
+      getSessions: vi.fn(() => [
+        { id: 'session-attached', title: 'Already attached', directory: '/project/one' },
+        { id: 'session-new', title: 'Recent session', directory: '/project/one' },
+      ]),
       getAgents: vi.fn(() => []),
       getModels: vi.fn(() => []),
       getMcpStatus: vi.fn(() => ({})),

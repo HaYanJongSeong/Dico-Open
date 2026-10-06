@@ -416,11 +416,11 @@ export class SessionBridge {
       if (isRecord(response) && response.error != null) {
         const status = isRecord(response.response) ? response.response.status : undefined;
         throw new BotError(status === 404 ? ErrorCode.SESSION_NOT_FOUND : ErrorCode.SERVER_UNHEALTHY,
-          status === 404 ? 'OpenCode session was not found' : 'OpenCode 세션 조회에 실패했습니다.', { sessionId, status });
+          status === 404 ? 'OpenCode 세션을 찾지 못했습니다.' : 'OpenCode 세션 조회에 실패했습니다.', { sessionId, status });
       }
       const session = unwrap(response as MaybeWrapped<SessionLike>);
       if (getSessionId(session) !== sessionId) {
-        throw new BotError(ErrorCode.SESSION_NOT_FOUND, 'OpenCode session was not found', { sessionId });
+        throw new BotError(ErrorCode.SESSION_NOT_FOUND, 'OpenCode 세션을 찾지 못했습니다.', { sessionId });
       }
     } catch (error) {
       if (error instanceof BotError) {
