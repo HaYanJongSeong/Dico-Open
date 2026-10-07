@@ -12,7 +12,7 @@ describe('publishing', () => {
     expect(pkg.main).toBe('dist/src/index.js');
     expect(pkg.types).toBe('dist/src/index.d.ts');
     expect(pkg.name).toBe('dico-open');
-    expect(pkg.version).toBe('0.1.1');
+    expect(pkg.version).toBe('0.1.2');
     expect(pkg.repository).toBe('https://github.com/HaYanJongSeong/Dico-Open');
     expect(pkg.private).toBeUndefined();
     expect(pkg.bin?.['dico-open']).toBe('dist/src/cli.js');
@@ -21,6 +21,7 @@ describe('publishing', () => {
     expect(pkg.files).toContain('dist/src/');
     expect(pkg.files).toContain('dist/scripts/discord/');
     expect(pkg.files).toContain('dico-open.cmd');
+    expect(pkg.files).toContain('scripts/start-visible.ps1');
     expect(pkg.files).not.toContain('scripts/');
     expect(pkg.scripts['discord:guilds']).toBe('node dist/scripts/discord/guilds.js');
     expect(pkg.files).not.toContain('HANDOFF.md');

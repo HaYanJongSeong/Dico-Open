@@ -87,7 +87,7 @@ pnpm build
 pnpm start
 ```
 
-On Windows, double-click `dico-open.cmd` instead (or run `.\dico-open.cmd` in PowerShell). It opens a visible terminal and retries after errors. Start only one bot instance. Test `/help` in the mapped channel, then `/new`. Set `autoConnect: true` only when you intentionally want every externally created OpenCode session to get a Discord thread.
+On Windows, double-click `dico-open.cmd` instead (or run `.\dico-open.cmd` in PowerShell). It opens a new PowerShell tab in Windows Terminal by default, using PowerShell 7 when installed or Windows PowerShell otherwise. If Windows Terminal is unavailable or fails to start, it opens a standalone PowerShell window. It retries after errors with a two-second delay. `npx dico-open` stays in the current terminal rather than opening another window. Start only one bot instance. Test `/help` in the mapped channel, then `/new`. Set `autoConnect: true` only when you intentionally want every externally created OpenCode session to get a Discord thread.
 
 The Discord bot token is currently stored in local `config.yaml`, not an environment variable. Both `config.yaml` and `.env` are excluded from the npm package and ignored by git. For a pre-existing shared OpenCode server, copy `.env.example` to `.env` and set `OPENCODE_SERVER_PASSWORD`, `OPENCODE_SHARED_SERVER_URL`, and `OPENCODE_SHARED_SERVER_PROJECT`. The CLI reads `.env` from the current working directory before loading bot modules; existing environment variables take precedence. Never upload local config, state, credentials, backups, or logs. Ignoring files does not remove anything already committed to repository history.
 
@@ -189,7 +189,7 @@ $OutputEncoding = [Text.UTF8Encoding]::new($false)
 
 Do not commit `config.yaml`, `state.json`, logs, bot tokens, or OpenCode server passwords.
 
-For a visible Windows Terminal session with a two-second restart after an error, run `dico-open.cmd` after `pnpm build`. It calls `scripts\start-visible.cmd`, which reads the password from `.env`; neither script contains credentials. Restart the bot to load changed `.env` values.
+To run in a PowerShell tab in Windows Terminal, run `dico-open.cmd` after `pnpm build`. `scripts\start-visible.cmd` selects the terminal and `scripts\start-visible.ps1` runs the bot. The CLI reads `.env` from the working directory; the launcher scripts contain no credentials. Script execution is permitted only for that PowerShell process; system execution policy and default terminal settings are unchanged. Restart the bot to load changed `.env` values.
 
 ## Discord usage
 

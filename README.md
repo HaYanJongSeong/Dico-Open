@@ -87,7 +87,7 @@ pnpm build
 pnpm start
 ```
 
-Windows에서는 `dico-open.cmd`를 더블클릭하거나 PowerShell에서 `.\dico-open.cmd`를 실행해도 됩니다. 터미널 창을 띄우고 오류가 나면 다시 실행합니다. 봇은 하나만 실행하세요. 연결된 채널에서 `/help`, 이어서 `/new`를 확인합니다. 외부에서 만든 OpenCode 세션마다 Discord 스레드를 만들려는 경우에만 `autoConnect: true`를 설정하세요.
+Windows에서는 `dico-open.cmd`를 더블클릭하거나 PowerShell에서 `.\dico-open.cmd`를 실행해도 됩니다. 기본적으로 Windows Terminal의 새 PowerShell 탭을 엽니다. PowerShell 7이 있으면 사용하고 없으면 Windows PowerShell을 사용합니다. Windows Terminal이 없거나 실행에 실패하면 별도 PowerShell 창을 엽니다. 오류가 나면 2초 뒤 다시 실행합니다. `npx dico-open`은 새 창을 만들지 않고 현재 터미널에서 실행합니다. 봇은 하나만 실행하세요. 연결된 채널에서 `/help`, 이어서 `/new`를 확인합니다. 외부에서 만든 OpenCode 세션마다 Discord 스레드를 만들려는 경우에만 `autoConnect: true`를 설정하세요.
 
 Discord 봇 토큰은 현재 **환경 변수가 아닌 로컬 `config.yaml`**에 저장합니다. `config.yaml`과 `.env`는 npm 패키지에서 제외하며 git에서도 무시합니다. 기존 공유 OpenCode 서버를 사용한다면 `.env.example`을 `.env`로 복사하고 `OPENCODE_SERVER_PASSWORD`, `OPENCODE_SHARED_SERVER_URL`, `OPENCODE_SHARED_SERVER_PROJECT`를 설정하세요. CLI는 봇 모듈을 불러오기 전에 현재 작업 디렉터리의 `.env`를 읽습니다. 이미 설정된 환경 변수가 우선합니다. 로컬 설정, 상태, 자격 증명, 백업, 로그를 업로드하지 마세요. 파일을 무시하도록 설정해도 이미 저장소 이력에 커밋한 내용은 지워지지 않습니다.
 
@@ -189,7 +189,7 @@ $OutputEncoding = [Text.UTF8Encoding]::new($false)
 
 `config.yaml`, `state.json`, 로그, 봇 토큰, OpenCode 서버 비밀번호를 커밋하지 마세요.
 
-Windows Terminal 창을 띄우고 오류 후 2초 뒤 재시작하려면 **`pnpm build`를 마친 뒤** `dico-open.cmd`를 실행하세요. 이 파일은 `scripts\start-visible.cmd`를 호출하며 해당 스크립트는 `.env`에서 비밀번호를 읽습니다. 두 스크립트 모두 자격 증명을 포함하지 않습니다. `.env` 변경 내용을 불러오려면 봇을 재시작하세요.
+Windows Terminal의 PowerShell 탭에서 실행하려면 **`pnpm build`를 마친 뒤** `dico-open.cmd`를 실행하세요. `scripts\start-visible.cmd`가 터미널을 선택하고 `scripts\start-visible.ps1`이 봇을 실행합니다. CLI는 작업 폴더의 `.env`를 읽으며 실행 스크립트에는 자격 증명이 없습니다. 스크립트 실행 허용은 해당 PowerShell 프로세스에만 적용하며 시스템 실행 정책이나 기본 터미널 설정은 바꾸지 않습니다. `.env` 변경 내용을 불러오려면 봇을 재시작하세요.
 
 ## Discord 사용법
 
