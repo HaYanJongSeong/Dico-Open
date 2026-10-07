@@ -26,6 +26,7 @@ import { handleInteraction } from './discord/handlers/interactionHandler.js';
 import type { AutocompleteHandler, CommandHandler } from './discord/handlers/interactionHandler.js';
 import { handleMessageCreate } from './discord/handlers/messageHandler.js';
 import { suppressLinkPreviews } from './discord/messageOptions.js';
+import { archiveEndedThread } from './discord/threadCleanup.js';
 import { CacheManager } from './opencode/cache.js';
 import { listSelectableAgentIds } from './opencode/agentIds.js';
 import { listModelIds } from './opencode/modelIds.js';
@@ -106,7 +107,7 @@ interface DiscordClientLike {
   login(token: string): Promise<unknown> | unknown;
   user?: { id: string } | null;
   channels?: {
-    fetch(channelId: string): Promise<unknown> | unknown;
+    fetch(channelId: string, options?: { force: boolean }): Promise<unknown> | unknown;
   };
   guilds?: {
     fetch(guildId: string): Promise<unknown> | unknown;
@@ -242,7 +243,7 @@ export async function startBot(options: StartBotOptions = {}): Promise<StartedBo
     ? createServerClient(process.env.OPENCODE_SHARED_SERVER_URL) : undefined;
   const cacheManager = options.cacheManager ?? new CacheManager({ logger: startupLogger });
   const discordClient = (options.createDiscordClient ?? defaultCreateDiscordClient)(config.discordToken);
-  const threadResolver = createDiscordThreadResolver(discordClient, startupLogger);
+  const threadResolver = createDiscordThreadResolver(discordClient);
   const questionHandler = new QuestionHandler({
     getThread: (threadId) => threadResolver.getCached(threadId) as QuestionThread | undefined,
     getChannelConfig: (threadId) => getChannelConfigForThread(stateManager, config, threadId),
@@ -400,16 +401,17 @@ export async function startBot(options: StartBotOptions = {}): Promise<StartedBo
       });
       for (const threadId of sessionsToReplay) {
         const session = stateManager.getSession(threadId);
-        if (session === undefined) {
+        if (session === undefined || session.status === 'ended') {
           continue;
         }
         const client = (serverManager.getClient(session.projectPath) ?? recoveredClients.get(session.projectPath)) as OpencodeSessionClient | undefined;
-         const thread = (threadResolver.getCached(threadId) ?? await threadResolver.fetch(threadId)) as HistoryThreadLike | undefined;
-         if (client === undefined || thread === undefined) {
-           continue;
-         }
+        if (client === undefined) {
+          continue;
+        }
         const channelConfig = getChannelConfigForThread(stateManager, config, threadId);
         await warnOnFailure(startupLogger, 'Failed to replay recovered session history', { threadId, sessionId: session.sessionId }, async () => {
+          const thread = (threadResolver.getCached(threadId) ?? await threadResolver.fetch(threadId)) as HistoryThreadLike | undefined;
+          if (thread === undefined) return;
           await sessionBridge.replaySessionHistory({
             client,
             threadId,
@@ -483,6 +485,12 @@ export async function startBot(options: StartBotOptions = {}): Promise<StartedBo
       return attached;
     };
     const deliveryWarnings = new Map<string, number>();
+    const archiveEnded = (threadId: string, session: SessionState): Promise<boolean> => archiveEndedThread(threadId, session, {
+      botUserId: discordClient.user?.id,
+      fetch: (id) => threadResolver.fetch(id, true),
+      getSession: (id) => stateManager.getSession(id),
+      warn: (message, meta) => startupLogger.warn(message, meta),
+    });
     const deliveryChecks = new Map<string, number>();
     let syncStopped = false;
     const performSyncNow = async (): Promise<boolean> => {
@@ -496,15 +504,12 @@ export async function startBot(options: StartBotOptions = {}): Promise<StartedBo
         for (const [threadId, session] of Object.entries(stateManager.getState().sessions)) {
           if (syncStopped) break;
           try {
-           const client = (serverManager.getClient(session.projectPath) ?? recoveredClients.get(session.projectPath)) as OpencodeSessionClient | undefined;
-           if (session.status === 'ended') {
-             // ponytail: a deleted thread leaves a stale mapping; rebuild it, no /connect needed.
-             if (sessionTitles.has(session.sessionId) && await reattachSession(session, client)) {
-               stateManager.removeSession(threadId);
-               changed = true;
-             }
-             continue;
-           }
+            const client = (serverManager.getClient(session.projectPath) ?? recoveredClients.get(session.projectPath)) as OpencodeSessionClient | undefined;
+            if (session.status === 'ended') {
+              changed = await archiveEnded(threadId, session) || changed;
+              continue;
+            }
+            if (client === undefined) continue;
             await streamHandler.renameThreadToTitle?.(threadId, sessionTitles.get(session.sessionId));
           const thread = (threadResolver.getCached(threadId) ?? await threadResolver.fetch(threadId)) as HistoryThreadLike | undefined;
            if (thread === undefined) {
@@ -516,9 +521,6 @@ export async function startBot(options: StartBotOptions = {}): Promise<StartedBo
              }
              stateManager.setSession(threadId, { ...session, status: 'ended' });
              changed = true;
-             continue;
-           }
-           if (client === undefined) {
              continue;
            }
           const previousMessageId = stateManager.getSession(threadId)?.lastSyncedMessageId;
@@ -564,10 +566,11 @@ export async function startBot(options: StartBotOptions = {}): Promise<StartedBo
                  streamHandler.unsubscribe?.(threadId);
                  changed = true;
                  startupLogger.warn('OpenCode에서 삭제된 세션의 동기화 종료', { threadId, sessionId: session.sessionId });
-                 await warnOnFailure(startupLogger, '삭제된 세션 안내 실패', { threadId }, async () => {
+                  await warnOnFailure(startupLogger, '삭제된 세션 안내 실패', { threadId }, async () => {
                    const thread = (threadResolver.getCached(threadId) ?? await threadResolver.fetch(threadId)) as HistoryThreadLike | undefined;
                    await thread?.send(suppressLinkPreviews('OpenCode 세션을 찾을 수 없어 동기화를 종료했습니다. `/new`로 새 세션을 시작하세요.'));
-                 });
+                  });
+                  await archiveEnded(threadId, { ...current, status: 'ended' });
                }
                continue;
              }
@@ -1053,7 +1056,14 @@ async function recoverSessions(
       continue;
     }
 
-    const exists = await dependencies.threadExists(threadId, session);
+    let exists: boolean;
+    try {
+      exists = await dependencies.threadExists(threadId, session);
+    } catch (error) {
+      dependencies.logger.warn('Discord 스레드 조회 실패; 세션 복구 상태를 유지합니다', { threadId, sessionId: session.sessionId, error });
+      skipped.add(threadId);
+      continue;
+    }
     if (!exists) {
       stateManager.setSession(threadId, { ...session, status: 'ended' });
       continue;
@@ -1432,17 +1442,17 @@ async function warnOnFailure(
 }
 
 interface ThreadResolver {
-  fetch(threadId: string): Promise<unknown>;
+  fetch(threadId: string, fresh?: boolean): Promise<unknown>;
   getCached(threadId: string): StreamThread | undefined;
   remember(threadId: string, thread: unknown): void;
 }
 
-function createDiscordThreadResolver(discordClient: DiscordClientLike, resolverLogger: Pick<Logger, 'warn'>): ThreadResolver {
+function createDiscordThreadResolver(discordClient: DiscordClientLike): ThreadResolver {
   const threads = new Map<string, unknown>();
 
   return {
-    async fetch(threadId: string): Promise<unknown> {
-      if (threads.has(threadId)) {
+    async fetch(threadId: string, fresh = false): Promise<unknown> {
+      if (!fresh && threads.has(threadId)) {
         return threads.get(threadId);
       }
 
@@ -1452,17 +1462,22 @@ function createDiscordThreadResolver(discordClient: DiscordClientLike, resolverL
 
       let thread: unknown;
       try {
-        thread = await discordClient.channels.fetch(threadId);
+        thread = await discordClient.channels.fetch(threadId, { force: true });
       } catch (error) {
-        resolverLogger.warn('Failed to fetch Discord thread during startup recovery', { threadId, error });
-        return undefined;
+        if (isRecord(error) && (error.code === 10003
+          || (error.status === 404 && error.message === 'Unknown Channel'))) {
+          threads.delete(threadId);
+          return undefined;
+        }
+        throw error;
       }
 
       if (thread !== undefined && thread !== null) {
         threads.set(threadId, thread);
       }
 
-      return thread;
+      if (thread === undefined || thread === null) threads.delete(threadId);
+      return thread ?? undefined;
     },
     getCached(threadId: string): StreamThread | undefined {
       const thread = threads.get(threadId);

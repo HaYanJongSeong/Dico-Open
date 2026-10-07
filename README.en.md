@@ -4,9 +4,15 @@
 
 Dico-Open is a Discord bridge built through vibe coding because the existing Kimaki did not work with OpenCode CLI v2.
 
-Discord channels map to local projects, and threads map to OpenCode sessions. Use `/new` or `/connect` to link a session. Existing connections recover after a restart. External sessions get new threads only when `autoConnect: true` is enabled.
+Discord channels map to local projects, and threads map to OpenCode sessions. Use `/new` or `/connect` to link a session. Existing connections are restored after a restart. External sessions get new threads only when `autoConnect: true` is enabled.
 
 This repository is a Node.js and TypeScript project using `discord.js` v14 and `@opencode-ai/sdk/v2`.
+
+## Cleaning up ended threads
+
+When sync finds an ended connection, it archives the thread if the bot created it. Messages and conversation history stay intact. Before archiving, it fetches the thread and checks its owner, server, parent channel, and current connection. A matching name alone is never a reason to archive a thread.
+
+This cleanup excludes active and inactive connections and user-created threads. An unavailable server or failed Discord lookup is not treated as proof that a connection was deleted. Ended connections no longer create replacement threads automatically; use `/connect` to reconnect. Threads without a saved connection are not included in this automatic cleanup.
 
 ## What it does
 
@@ -55,7 +61,7 @@ servers:
 
 `projectPath` must point to an existing project directory on the computer running the bot. On macOS/Linux, use an absolute path such as `/home/you/project`. `allowedUsers` only limits who can use the bot. Restrict channel read access separately in Discord. Server administrators can still access the channel. `interactive` displays OpenCode permission requests as approval buttons in Discord.
 
-4. Run the following with that working directory as your current directory:
+4. Run the following from that working directory:
 
 ```bash
 npx dico-open
@@ -65,7 +71,7 @@ On the first run, npm may download the package and ask you to confirm installati
 
 ## Install from source
 
-1. Create a Discord application and bot in the [Developer Portal](https://discord.com/developers/applications). Enable Message Content Intent. Invite the bot with the `bot` and `applications.commands` scopes. Give it permission to view the project channel, send/read messages, and create/send in public threads. A channel-creating setup wizard also needs Manage Channels.
+1. Create a Discord application and bot in the [Developer Portal](https://discord.com/developers/applications). Enable Message Content Intent. Invite the bot with the `bot` and `applications.commands` scopes. Give it permission to view the project channel, send/read messages, create public threads, and send messages in them. The setup wizard also needs Manage Channels to create a channel.
 2. Install Node.js 24+, pnpm 10.33.1, and OpenCode CLI v2 on the computer that hosts your projects. Download and extract this repository's ZIP from [GitHub](https://github.com/HaYanJongSeong/Dico-Open). Open a terminal in the extracted directory.
 3. Install and build:
 
@@ -74,7 +80,7 @@ pnpm install
 pnpm build
 ```
 
-4. Copy `config.example.yaml` to `config.yaml` (PowerShell: `Copy-Item config.example.yaml config.yaml`; macOS/Linux: `cp config.example.yaml config.yaml`). Replace the example Discord bot token, server ID, channel ID, project path, and allowed user ID with your own. The channel must already exist and be private; use only one channel entry at first. Alternatively, `pnpm run setup` creates a private channel for one user; it needs the bot's Manage Channels permission. The wizard refuses to reuse a channel with the same name; configure existing channels manually. Keep the generated `config.yaml` and backups local.
+4. Copy `config.example.yaml` to `config.yaml` (PowerShell: `Copy-Item config.example.yaml config.yaml`; macOS/Linux: `cp config.example.yaml config.yaml`). Replace the example Discord bot token, server ID, channel ID, project path, and allowed user ID with your own. The channel must already exist and be private; use only one channel entry at first. Alternatively, `pnpm run setup` creates a private channel for one user; the bot needs the Manage Channels permission. The wizard refuses to reuse a channel with the same name; configure existing channels manually. Keep the generated `config.yaml` and backups local.
 5. Start from the same directory:
 
 ```bash
@@ -87,7 +93,7 @@ The Discord bot token is currently stored in local `config.yaml`, not an environ
 
 Set `OPENCODE_DISCORD_SYNC_IMAGES=true` in `.env` to attach newly displayed OpenCode tool images to their mapped Discord threads across all projects. Existing images are not bulk-replayed when enabled. Only PNG, JPEG, WebP, and GIF `data:` images are sent (up to 8 MiB); remote URLs and local paths are never fetched. Members with thread access can see the images. Restart the bot after changing `.env`.
 
-Run in development from a source checkout:
+Run in development mode from a source checkout:
 
 ```bash
 pnpm dev
@@ -102,6 +108,8 @@ pnpm build
 ```
 
 ## Installation verification
+
+After publishing `dico-open@0.1.0`, the registry's `latest=0.1.0` and the release archive's SHA-512 integrity were verified. npm installation and `npx dico-open@0.1.0` with a fresh cache were checked in separate Windows directories. The executable rejects a missing local `config.yaml` with the expected configuration error. First-time setup with a new Discord bot account was not tested.
 
 The project was renamed from Open_Cord to Dico-Open. The `@hayanjongseong/open_cord` checks below describe the package published under the previous name. That package remains available.
 
@@ -118,7 +126,7 @@ npx --yes pnpm@10.33.1 build
 npx --yes pnpm@10.33.1 test
 ```
 
-After creating your own `config.yaml` as described above, start with `npx --yes pnpm@10.33.1 start`. This verifies a clean project directory on the existing Windows machine, not a fresh operating system or first-time setup with a new Discord bot account. macOS/Linux installation and a published npm installation have not been tested in this run. No npm publication was performed.
+After creating your own `config.yaml` as described above, start with `npx --yes pnpm@10.33.1 start`. These checks verify a clean project directory on the existing Windows machine, not a fresh operating system or first-time setup with a new Discord bot account. macOS/Linux installation and installation from the published npm package have not been tested in this run. No npm publication was performed.
 
 ## Configuration
 
@@ -165,7 +173,7 @@ Notes:
 
 - Discord limits normal message content to 2,000 characters. The bot splits long live replies and history messages automatically.
 - Discord has no table renderer. Markdown tables in replies and replayed history are wrapped in a code fence so columns stay aligned. Text already inside a code fence is left unchanged.
-- The current history reader fetches at most the latest 100 messages in one read; it does not support a working cursor. `connectHistoryLimit: 0` does not guarantee full history. If the saved message marker is older than those 100 messages, recovery skips that gap rather than risking duplicate messages.
+- The current history reader fetches at most the latest 100 messages in one read; it does not support a working cursor. `connectHistoryLimit: 0` does not guarantee full history. If the saved message marker is older than those 100 messages, recovery skips the gap rather than risk sending duplicate messages.
 - Discord does not impose a fixed practical message-count limit per thread. Do not create a new thread only because a thread has many messages.
 - Discord may archive inactive threads. Re-open the thread in Discord before sending a new prompt if needed.
 - Large history imports can be throttled by Discord. Use a smaller `connectHistoryLimit` for faster initial connections.
@@ -198,7 +206,7 @@ Thread-level flow:
 
 1. Send normal messages in the thread to prompt the agent.
 2. Messages sent during an active turn go directly to OpenCode (`delivery: steer`). The bot does not currently add them to its own queue.
-3. Use `/interrupt` to abort the current session work. It does not delete the session.
+3. Use `/interrupt` to abort the current work in the session. It does not delete the session.
 4. Use `/info`, `/inspect`, and `/diff` to examine the session. Use `/sync now` for a manual sync.
 
 ## Command overview
@@ -258,15 +266,15 @@ The code uses strict TypeScript, named exports, Zod config validation, `BotError
 
 ## Operational notes
 
-The bot manages `opencode serve` processes itself unless a shared server is configured. It starts servers on demand, shares one server per project path, watches health, and persists process metadata in `state.json`. Auto-connect covers configured projects only; child sessions do not get separate threads. If a configured Discord channel is deleted, rerun setup or update `config.yaml` instead of silently creating an unrestricted replacement.
+The bot manages `opencode serve` processes itself unless a shared server is configured. It starts servers on demand, shares one server per project path, monitors server health, and persists process metadata in `state.json`. Auto-connect covers configured projects only; child sessions do not get separate threads. If a configured Discord channel is deleted, rerun setup or update `config.yaml` instead of silently creating an unrestricted replacement.
 
-History polling intervals depend on recent activity: 1 second when less than 10 seconds have passed since activity, 2 seconds when less than 30 seconds have passed, 5 seconds when less than 60 seconds have passed, 10 seconds when less than 120 seconds have passed, and 15 seconds after that. Detecting new messages or changes returns polling to the faster interval. These intervals are delays after a complete scan, not total delivery times; delivery also includes the time spent fetching and sending each session's messages. `/sync now` skips the delay, but waits for any scan already in progress.
+History polling intervals depend on recent activity: 1 second when less than 10 seconds have passed since activity, 2 seconds when less than 30 seconds have passed, 5 seconds when less than 60 seconds have passed, 10 seconds when less than 120 seconds have passed, and 15 seconds after that. New messages or changes return polling to the faster interval. These intervals are delays after a complete scan, not total delivery times; delivery also includes the time spent fetching and sending each session's messages. `/sync now` skips the delay, but waits for any scan already in progress.
 
 When a shared OpenCode service is configured, the bot receives SSE for all projects from that service. CLI v2's `session.step.started` event also triggers immediate user-message synchronization. The bot compares recent OpenCode replies with Discord bot-message timestamps. If a thread is at least 2 minutes behind, it posts a warning and writes a log entry, at most once every 10 minutes per thread. Delivery-check polling does not block history synchronization and runs at most once per minute per thread. A warning alone does not resend missed messages. Timestamps cannot reliably distinguish messages from other bots or replies outside the latest 25 messages. Accurate recovery requires per-message delivery acknowledgments.
 
 `allowedUsers` restricts messages and approval buttons, not read access. Restrict access to sensitive channels in Discord as well.
 
-New OpenCode user messages in every connected session are also sent automatically to the corresponding Discord thread. User messages recover through a saved acknowledgment ID separate from the one used for replies. Existing user-message history is not replayed retroactively. Prompts sent to the bot from Discord are marked with their source to prevent echoes. The legacy prompt path for attachments has no source marker, so the bot compares text and timestamps within 60 seconds against the latest 100 Discord messages. Repeating the same text in the terminal can cause one message to be skipped. `/inspect` shows counts by type from the current thread's latest 100 OpenCode messages. When you select multiple types, it privately displays the latest 5 messages, with up to 1,500 characters per item. User messages, replies, and thoughts are selected by default. Code blocks are part of replies, not a separate message type. System messages and raw tool output are not sent automatically; only server administrators can view them through `/inspect`. Inspecting selected types does not change automatic forwarding settings.
+New OpenCode user messages in every connected session are also sent automatically to the corresponding Discord thread. User messages are recovered using a saved acknowledgment ID separate from the one used for replies. Existing user-message history is not replayed retroactively. Prompts sent to the bot from Discord are marked with their source to prevent echoes. The legacy prompt path for attachments has no source marker, so the bot compares text and timestamps within 60 seconds against the latest 100 Discord messages. Repeating the same text in the terminal can cause one message to be skipped. `/inspect` shows counts by type from the current thread's latest 100 OpenCode messages. When you select multiple types, it privately displays the latest 5 messages, with up to 1,500 characters per item. User messages, replies, and thoughts are selected by default. Code blocks are part of replies, not a separate message type. System messages and raw tool output are not sent automatically; only server administrators can view them through `/inspect`. Inspecting selected types does not change automatic forwarding settings.
 
 The bot cannot enforce the language of model-generated reasoning. Some models send English reasoning summaries. If Korean output is required, do not deploy publicly until you have checked that model's output in the actual runtime environment.
 

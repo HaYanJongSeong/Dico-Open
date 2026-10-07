@@ -9,6 +9,149 @@ import { BotError, ErrorCode } from './utils/errors.js';
 
 const startedBots: StartedBot[] = [];
 
+describe('자동 스레드 보관 동기화 회귀', () => {
+  afterEach(() => vi.useRealTimers());
+
+  async function setup(status: SessionState['status'] = 'ended', hasClient = true) {
+    vi.useFakeTimers();
+    const session: SessionState = {
+      sessionId: 'session-1', guildId: 'guild-1', channelId: 'channel-1', projectPath: '/project',
+      agent: 'build', model: null, createdBy: 'user-1', createdAt: 1, lastActivityAt: 1,
+      lastSyncedMessageId: 'already-synced', status,
+    };
+    const state: BotState = { version: 1, sessions: { 'thread-1': session }, servers: {}, queues: {} };
+    const stateManager = {
+      load: vi.fn(), getState: () => state, getServer: vi.fn(() => ({ status: 'running' } as ServerState)),
+      setServer: vi.fn(), removeServer: vi.fn(), getSession: (id: string) => state.sessions[id],
+      setSession: vi.fn((id: string, next: SessionState) => { state.sessions[id] = next; }),
+      removeSession: vi.fn((id: string) => { delete state.sessions[id]; }),
+      getQueue: () => [], clearQueue: vi.fn(),
+    };
+    const thread = {
+      id: 'thread-1', ownerId: 'bot-1', guildId: 'guild-1', parentId: 'channel-1', archived: false,
+      isThread: () => true, send: vi.fn(),
+      setArchived: vi.fn(async () => { thread.archived = true; }),
+    };
+    const create = vi.fn(async () => ({ ...thread, id: 'new-thread' }));
+    const fetch = vi.fn(async (id: string): Promise<unknown> => id === 'channel-1' ? { threads: { create } } : thread);
+    const client = { session: { list: vi.fn(async () => [{ id: 'session-1', title: 'Same title', directory: '/project' }]) } };
+    const replaySessionHistory = vi.fn(async () => ({ latestAssistantAt: undefined }));
+    const runtimeLogger = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+    const on = vi.fn();
+    const unsubscribe = vi.fn();
+    await startBot({
+      configLoader: { load: vi.fn(), getConfig: () => ({ discordToken: 'token', servers: [{
+        serverId: 'guild-1', channels: [{ channelId: 'channel-1', projectPath: '/project', autoConnect: true }],
+      }] }) },
+      stateManager, serverManager: {
+        getClient: () => hasClient ? client : undefined, ensureRunning: vi.fn(async () => hasClient ? client : undefined),
+      },
+      cacheManager: { refresh: vi.fn() }, streamHandler: { subscribe: vi.fn(), unsubscribe },
+      sessionBridge: { getDedupeSet: () => new Set<string>(), replaySessionHistory } as unknown as SessionBridge,
+      createDiscordClient: () => ({ login: vi.fn(), user: { id: 'bot-1' }, channels: { fetch }, on }),
+      threadExists: () => true, deployCommands: vi.fn(), getCommandDefinitions: () => [], preflight: vi.fn(),
+      logger: runtimeLogger,
+    });
+    const tick = async () => { await vi.advanceTimersByTimeAsync(1000); };
+    return { session, state, stateManager, thread, create, fetch, replaySessionHistory, runtimeLogger, tick, on, unsubscribe };
+  }
+
+  it('ended 제목이 존재해도 새 스레드를 만들지 않고 서버 없이 기존 대화를 보관한다', async () => {
+    const f = await setup('ended', false);
+    await f.tick();
+    expect(f.thread.setArchived).toHaveBeenCalledExactlyOnceWith(true);
+    expect(f.state.sessions['thread-1']).toBe(f.session);
+    expect(f.create).not.toHaveBeenCalled();
+    expect(f.stateManager.removeSession).not.toHaveBeenCalled();
+  });
+
+  it('ended 제목이 최신 세션 목록에 있어도 자동 재연결하지 않는다', async () => {
+    const f = await setup();
+    await f.tick();
+    expect(f.create).not.toHaveBeenCalled();
+    expect(f.stateManager.removeSession).not.toHaveBeenCalled();
+    expect(f.thread.setArchived).toHaveBeenCalledOnce();
+  });
+
+  it.each(['active', 'inactive'] as const)('정상 %s 세션은 사용자 소유여도 동기화를 유지한다', async (status) => {
+    const f = await setup(status);
+    f.thread.ownerId = 'user-1';
+    await f.tick();
+    expect(f.replaySessionHistory).toHaveBeenCalledOnce();
+    expect(f.thread.setArchived).not.toHaveBeenCalled();
+    expect(f.state.sessions['thread-1']?.status).toBe(status);
+  });
+
+  it('사용자 소유 ended 스레드는 보관하지 않는다', async () => {
+    const f = await setup();
+    f.thread.ownerId = 'user-1';
+    await f.tick();
+    expect(f.thread.setArchived).not.toHaveBeenCalled();
+  });
+
+  it.each(['active', 'inactive'] as const)('서버 없는 %s 세션은 조회·상태변경을 건너뛴다', async (status) => {
+    const f = await setup(status, false);
+    f.fetch.mockClear();
+    await f.tick();
+    expect(f.fetch).not.toHaveBeenCalled();
+    expect(f.stateManager.setSession).not.toHaveBeenCalled();
+  });
+
+  it.each([{ code: 50013, status: 403 }, new Error('network'), { code: 10008, status: 404 }, { status: 404, message: 'other resource' }])(
+    '일시 조회 실패 또는 채널이 아닌 404는 연결 상태를 유지한다: %j', async (error) => {
+      const f = await setup('active');
+      f.fetch.mockRejectedValue(error);
+      await f.tick();
+      expect(f.stateManager.setSession).not.toHaveBeenCalled();
+      expect(f.create).not.toHaveBeenCalled();
+      expect(f.runtimeLogger.warn).toHaveBeenCalledWith('Failed to synchronize session', expect.objectContaining({ error }));
+    },
+  );
+
+  it('캐시의 archived 값을 신뢰하지 않고 실제 조회 후 중복 보관을 제외한다', async () => {
+    const f = await setup();
+    const messageListener = f.on.mock.calls.find(([name]) => name === 'messageCreate')?.[1] as (message: unknown) => void;
+    messageListener({ channel: f.thread, author: { id: 'bot-1', bot: true }, content: '', attachments: new Map() });
+    f.fetch.mockResolvedValue({ ...f.thread, archived: true });
+    await f.tick();
+    expect(f.fetch).toHaveBeenCalledWith('thread-1', { force: true });
+    expect(f.thread.setArchived).not.toHaveBeenCalled();
+  });
+
+  it('보관 실패 시 다음 기존 동기화에서 재시도한다', async () => {
+    const f = await setup();
+    f.thread.setArchived.mockRejectedValueOnce(new Error('403'));
+    await f.tick();
+    expect(f.state.sessions['thread-1']).toBe(f.session);
+    await f.tick();
+    expect(f.thread.setArchived).toHaveBeenCalledTimes(2);
+    expect(f.runtimeLogger.warn).toHaveBeenCalledWith(expect.stringContaining('재시도'), expect.any(Object));
+    await f.tick();
+    expect(f.thread.setArchived).toHaveBeenCalledTimes(2);
+  });
+
+  it('실제 조회 도중 /connect가 변경한 sessionId/status를 다시 확인한다', async () => {
+    const f = await setup();
+    f.fetch.mockImplementationOnce(async () => {
+      f.state.sessions['thread-1'] = { ...f.session, sessionId: 'new-session', status: 'active' };
+      return f.thread;
+    });
+    await f.tick();
+    expect(f.thread.setArchived).not.toHaveBeenCalled();
+  });
+
+  it('SDK 명시적 404 안내 후 즉시 보관한다', async () => {
+    const f = await setup('active');
+    f.replaySessionHistory.mockRejectedValueOnce(new BotError(ErrorCode.SESSION_NOT_FOUND, 'not found', { status: 404 }));
+    await f.tick();
+    expect(f.state.sessions['thread-1']?.status).toBe('ended');
+    expect(f.thread.send).toHaveBeenCalledOnce();
+    expect(f.unsubscribe).toHaveBeenCalledWith('thread-1');
+    expect(f.thread.setArchived).toHaveBeenCalledOnce();
+    expect(f.thread.send.mock.invocationCallOrder[0]).toBeLessThan(f.thread.setArchived.mock.invocationCallOrder[0]!);
+  });
+});
+
 describe('적응형 동기화 간격', () => {
   it('활동 직후 빠르게 조회하고 유휴 상태에서는 최대 15초까지 늦춘다', () => {
     const activity = 1_000_000;
@@ -2405,7 +2548,14 @@ describe('startBot', () => {
     })));
   });
 
-  it('marks a recovered active session ended when default Discord thread fetch rejects', async () => {
+  it.each([
+    [new Error('network'), 'active'],
+    [{ code: 50013, status: 403 }, 'active'],
+    [{ code: 10008, status: 404 }, 'active'],
+    [{ status: 404, message: 'other resource' }, 'active'],
+    [{ code: 10003, status: 404 }, 'ended'],
+    [{ status: 404, message: 'Unknown Channel' }, 'ended'],
+  ] as const)('isolates recovery fetch errors and ends only confirmed missing channels: %j', async (error, expectedStatus) => {
     const server: ServerState = {
       port: 1234,
       pid: 111,
@@ -2464,7 +2614,7 @@ describe('startBot', () => {
       streamHandler,
       createDiscordClient: vi.fn(() => ({
         login: vi.fn(),
-        channels: { fetch: vi.fn(async () => { throw new Error('missing thread'); }) },
+        channels: { fetch: vi.fn(async () => { throw error; }) },
       })),
       deployCommands: vi.fn(),
       getCommandDefinitions: vi.fn(() => []),
@@ -2474,9 +2624,13 @@ describe('startBot', () => {
       healthCheck: vi.fn(() => true),
     });
 
-    await vi.waitFor(() => {
-      expect(stateManager.setSession).toHaveBeenCalledWith('thread-missing', { ...session, status: 'ended' });
-    });
+    expect(state.sessions['thread-missing']?.status).toBe(expectedStatus);
+    if (expectedStatus === 'active') {
+      expect(stateManager.setSession).not.toHaveBeenCalled();
+      expect(state.sessions['thread-missing']).toBe(session);
+    } else {
+      expect(stateManager.setSession).toHaveBeenCalledExactlyOnceWith('thread-missing', { ...session, status: 'ended' });
+    }
     expect(streamHandler.subscribe).not.toHaveBeenCalled();
   });
 });

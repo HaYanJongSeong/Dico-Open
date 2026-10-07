@@ -1,6 +1,6 @@
 {
   "name": "dico-open",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Dico-Open bridges OpenCode CLI v2 sessions with Discord threads",
   "repository": "https://github.com/HaYanJongSeong/Dico-Open",
   "type": "module",
