@@ -55,7 +55,7 @@ export interface OpencodeSessionClient {
 
 /** Minimal stream subscriber contract implemented by the later stream handler task. */
 export interface StreamSubscriber {
-  subscribe(threadId: string, sessionId: string, client: OpencodeSessionClient, dedupeSet?: Set<string>): Promise<void> | void;
+  subscribe(threadId: string, sessionId: string, client: OpencodeSessionClient, dedupeSet?: Set<string>, projectPath?: string): Promise<void> | void;
   startTypingForThread?(threadId: string): void;
   refreshTypingForThread?(threadId: string): void;
   stopTypingForThread?(threadId: string): void;
@@ -167,7 +167,7 @@ export class SessionBridge {
     }
     const state = this.buildSessionState(options, sessionId);
     this.stateManager.setSession(options.threadId, state);
-    await this.refreshSubscription(options.threadId, sessionId, options.client);
+    await this.refreshSubscription(options.threadId, sessionId, options.client, options.projectPath);
     return state;
   }
 
@@ -186,7 +186,7 @@ export class SessionBridge {
     const model = parseModel(options.model ?? session.model);
 
     await this.verifySession(options.client, session.sessionId);
-    await this.refreshSubscription(threadId, session.sessionId, options.client);
+    await this.refreshSubscription(threadId, session.sessionId, options.client, session.projectPath);
     let result: unknown;
     try {
       if (options.client.v2Root !== undefined && (options.files?.length ?? 0) === 0) {
@@ -234,9 +234,14 @@ export class SessionBridge {
    * @returns Nothing.
    */
   public async connectToSession(options: ConnectToSessionOptions): Promise<void> {
+    const previous = this.stateManager.getSession(options.threadId);
+    if (previous && previous.status !== 'ended' && previous.sessionId !== options.sessionId) {
+      throw new BotError(ErrorCode.SESSION_ALREADY_ATTACHED, '이 스레드는 이미 다른 OpenCode 세션에 연결되어 있습니다.', {
+        threadId: options.threadId, sessionId: previous.sessionId,
+      });
+    }
     await this.verifySession(options.client, options.sessionId);
 
-    const previous = this.stateManager.getSession(options.threadId);
     const state = this.buildSessionState(options, options.sessionId);
     if (previous?.sessionId === options.sessionId) {
       state.userMirrorSince = previous.userMirrorSince ?? state.userMirrorSince;
@@ -252,7 +257,7 @@ export class SessionBridge {
     this.stateManager.setSession(options.threadId, state);
 
     const dedupeSet = this.getDedupeSet(options.threadId);
-    await this.streamSubscriber.subscribe(options.threadId, options.sessionId, options.client, dedupeSet);
+    await this.streamSubscriber.subscribe(options.threadId, options.sessionId, options.client, dedupeSet, options.projectPath);
     const historyLimit = options.historyLimit === 0 ? undefined : options.historyLimit;
 
     if (historyLimit !== undefined) {
@@ -366,8 +371,8 @@ export class SessionBridge {
     return { terminal: replayed.terminal, changed: replayed.changed, active: replayed.active, latestAssistantAt: replayed.latestAssistantAt };
   }
 
-  private async refreshSubscription(threadId: string, sessionId: string, client: OpencodeSessionClient): Promise<void> {
-    await this.streamSubscriber.subscribe(threadId, sessionId, client, this.getDedupeSet(threadId));
+  private async refreshSubscription(threadId: string, sessionId: string, client: OpencodeSessionClient, projectPath: string): Promise<void> {
+    await this.streamSubscriber.subscribe(threadId, sessionId, client, this.getDedupeSet(threadId), projectPath);
   }
 
   /**

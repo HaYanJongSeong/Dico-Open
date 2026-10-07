@@ -446,21 +446,23 @@ export async function startBot(options: StartBotOptions = {}): Promise<StartedBo
     const sessionTitles = new Map<string, string>();
     const refreshSessionTitles = async (): Promise<void> => {
       for (const projectPath of getAutoConnectProjects(config)) {
-        const client = recoveredClients.get(projectPath) ?? serverManager.getClient(projectPath);
+        const client = serverManager.getClient(projectPath) ?? recoveredClients.get(projectPath);
         if (client === undefined) {
           continue;
         }
-        const sessions = await listClientSessions(client, projectPath);
-        for (const session of sessions) {
-          const sessionId = getSessionId(session);
-          if (sessionId === undefined) {
-            continue;
+        await warnOnFailure(startupLogger, '세션 제목 조회 실패', { projectPath }, async () => {
+          const sessions = await listClientSessions(client, projectPath);
+          for (const session of sessions) {
+            const sessionId = getSessionId(session);
+            if (sessionId === undefined) {
+              continue;
+            }
+            const title = isRecord(session) && typeof session.title === 'string' ? session.title : undefined;
+            if (title !== undefined) {
+              sessionTitles.set(sessionId, title);
+            }
           }
-          const title = isRecord(session) && typeof session.title === 'string' ? session.title : undefined;
-          if (title !== undefined) {
-            sessionTitles.set(sessionId, title);
-          }
-        }
+        });
       }
     };
     // ponytail: reuses the auto-connect path so a deleted thread gets a fresh one, no /connect needed.
@@ -482,17 +484,19 @@ export async function startBot(options: StartBotOptions = {}): Promise<StartedBo
     };
     const deliveryWarnings = new Map<string, number>();
     const deliveryChecks = new Map<string, number>();
+    let syncStopped = false;
     const performSyncNow = async (): Promise<boolean> => {
       let changed = false;
       await warnOnFailure(startupLogger, '주기적 세션 동기화 실패', {}, async () => {
         const beforeSessions = new Set(Object.values(stateManager.getState().sessions).map((session) => session.sessionId));
-        await discoverNewSessions();
+        await warnOnFailure(startupLogger, '새 세션 조회 실패', {}, discoverNewSessions);
         const afterDiscovery = new Set(Object.values(stateManager.getState().sessions).map((session) => session.sessionId));
         changed = beforeSessions.size !== afterDiscovery.size;
         await refreshSessionTitles();
         for (const [threadId, session] of Object.entries(stateManager.getState().sessions)) {
+          if (syncStopped) break;
           try {
-           const client = (serverManager.getClient(session.projectPath) ?? discoveryClient) as OpencodeSessionClient | undefined;
+           const client = (serverManager.getClient(session.projectPath) ?? recoveredClients.get(session.projectPath)) as OpencodeSessionClient | undefined;
            if (session.status === 'ended') {
              // ponytail: a deleted thread leaves a stale mapping; rebuild it, no /connect needed.
              if (sessionTitles.has(session.sessionId) && await reattachSession(session, client)) {
@@ -541,7 +545,8 @@ export async function startBot(options: StartBotOptions = {}): Promise<StartedBo
                deliveryChecks.set(threadId, now);
                // ponytail: diagnostics run outside the serial history scan; check receipts at most once per minute.
                void warnOnFailure(startupLogger, 'Discord 전송 확인 실패', { threadId }, async () => {
-                 if (await isDiscordSyncStalled(thread, discordClient.user?.id, replay.latestAssistantAt, now)) {
+                  if (await isDiscordSyncStalled(thread, discordClient.user?.id, replay.latestAssistantAt, now)) {
+                    if (syncStopped) return;
                    deliveryWarnings.set(threadId, now);
                    startupLogger.warn('Discord 동기화 지연 감지', { threadId, sessionId: session.sessionId, latestAssistantAt: replay.latestAssistantAt });
                    await warnOnFailure(startupLogger, 'Discord 동기화 지연 알림 실패', { threadId }, async () => {
@@ -574,6 +579,7 @@ export async function startBot(options: StartBotOptions = {}): Promise<StartedBo
     };
     let syncInFlight: Promise<boolean> | undefined;
     const syncNow = (): Promise<boolean> => {
+      if (syncStopped) return Promise.resolve(false);
       if (syncInFlight !== undefined) {
         return syncInFlight;
       }
@@ -585,6 +591,7 @@ export async function startBot(options: StartBotOptions = {}): Promise<StartedBo
     runSyncNow = async () => { await syncNow(); };
     let historyPoller: ReturnType<typeof setTimeout> | undefined;
     const scheduleSync = (): void => {
+      if (syncStopped) return;
       if (historyPoller !== undefined) clearTimeout(historyPoller);
       const delaySeconds = syncDelay();
       historyPoller = setTimeout(() => {
@@ -596,11 +603,16 @@ export async function startBot(options: StartBotOptions = {}): Promise<StartedBo
       historyPoller.unref?.();
     };
     wakeSync = (): void => {
+      if (syncStopped) return;
       lastSyncActivityAt = syncClock();
       if (historyPoller !== undefined) clearTimeout(historyPoller);
       void syncNow().then(() => scheduleSync());
     };
     scheduleSync();
+    const stopSync = (): void => {
+      syncStopped = true;
+      if (historyPoller !== undefined) clearTimeout(historyPoller);
+    };
     startupLogger.info('세션 동기화 활성화', { interval: '최근 활동 기준 1·2·5·10·15초 적응형', maxIntervalMinutes: 0.25, historyRecovery: '최근 메시지 조회' });
 
   configLoader.onChange?.((nextConfig) => {
@@ -619,6 +631,7 @@ export async function startBot(options: StartBotOptions = {}): Promise<StartedBo
   const lifecycleServerManager = options.registerLifecycleHandlers === undefined
     ? {
       shutdownAll: async () => {
+        stopSync();
         await serverManager.shutdownAll?.();
         await shutdownRecoveredServers(recoveredClients, stateManager, options.killPid ?? defaultKillPid, startupLogger);
       },
@@ -638,10 +651,9 @@ export async function startBot(options: StartBotOptions = {}): Promise<StartedBo
     logger: asLifecycleLogger(startupLogger),
   });
 
-  const startedLifecycleController = configLoader.close === undefined
-    ? lifecycleController
-    : wrapLifecycleController(lifecycleController, async () => {
-      await configLoader.close?.();
+  const startedLifecycleController = wrapLifecycleController(lifecycleController, async () => {
+       stopSync();
+       await configLoader.close?.();
     });
 
   configLoader.watch?.({
@@ -845,7 +857,7 @@ function createRuntimeCommandHandlers(dependencies: RuntimeHandlerDependencies):
       sessionBridge: dependencies.sessionBridge,
       rememberThread: dependencies.threadResolver.remember,
     })],
-    ['connect', createConnectCommandHandler({ stateManager, serverManager: dependencies.serverManager, sessionBridge: dependencies.sessionBridge })],
+    ['connect', createConnectCommandHandler({ stateManager, serverManager: dependencies.serverManager, sessionBridge: dependencies.sessionBridge, rememberThread: dependencies.threadResolver.remember })],
     ['agent', createAgentCommandHandler({ stateManager, serverManager: dependencies.serverManager, cacheManager })],
     ['model', createModelCommandHandler({ stateManager, serverManager: dependencies.serverManager, cacheManager })],
     ['interrupt', createInterruptCommandHandler({ stateManager, serverManager: dependencies.serverManager, sessionBridge: dependencies.sessionBridge })],
@@ -938,8 +950,8 @@ function createAutocompleteHandler(dependencies: RuntimeHandlerDependencies): Au
 
 function asSessionStreamSubscriber(streamHandler: StreamHandlerLike): ConstructorParameters<typeof SessionBridge>[0]['streamSubscriber'] {
   return {
-    subscribe: async (threadId, sessionId, client, dedupeSet) => {
-      await streamHandler.subscribe(threadId, sessionId, client, dedupeSet);
+    subscribe: async (threadId, sessionId, client, dedupeSet, projectPath) => {
+      await streamHandler.subscribe(threadId, sessionId, client, dedupeSet, projectPath);
     },
     startTypingForThread: (threadId) => streamHandler.startTypingForThread?.(threadId),
     refreshTypingForThread: (threadId) => streamHandler.refreshTypingForThread?.(threadId),

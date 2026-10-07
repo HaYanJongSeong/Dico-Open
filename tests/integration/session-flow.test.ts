@@ -142,7 +142,7 @@ describe('session flow integration', () => {
       thread,
     });
 
-    expect(streamSubscriber.subscribe).toHaveBeenCalledWith(thread.id, 'session-existing', client, expect.any(Set));
+    expect(streamSubscriber.subscribe).toHaveBeenCalledWith(thread.id, 'session-existing', client, expect.any(Set), '/workspace/project');
     expect(client.session.messages).toHaveBeenNthCalledWith(1, { sessionID: 'session-existing', limit: 2 });
     expect(client.session.messages).toHaveBeenCalledTimes(1);
     expect(thread.send).toHaveBeenNthCalledWith(1, 'previous answer');

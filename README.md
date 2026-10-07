@@ -2,13 +2,13 @@
 
 기존 Kimaki가 현재 OpenCode CLI v2 환경에서 동작하지 않아 바이브 코딩으로 만든 Discord 브릿지입니다.
 
-OpenCode CLI v2 ↔ Discord bridge. It maps Discord channels to local OpenCode projects and root sessions to threads. Configured projects reconnect automatically; `/new` and `/connect` remain available.
+OpenCode CLI v2 ↔ Discord bridge. Discord channels map to local projects, and threads map to OpenCode sessions. Use `/new` or `/connect` to link a session. Existing connections recover after a restart; external sessions get new threads only when `autoConnect: true` is enabled.
 
 This repository is a Node.js and TypeScript project using `discord.js` v14 and `@opencode-ai/sdk/v2`.
 
 ## What It Does
 
-Each configured Discord channel points at one local project path. The bot starts one `opencode serve` process per unique project path (or attaches to a configured shared server), creates Discord threads for root sessions, streams OpenCode output back to Discord, and persists runtime state so sessions can recover after restarts. Auto-connect skips sessions with `parentID`; it does not relay child-only SSE output into the parent thread. Parent replies are still streamed normally.
+Each configured Discord channel points at one local project path. The bot starts one `opencode serve` process per unique project path, or uses a configured shared server. It streams replies into connected threads and saves connections for recovery after a restart. Automatic thread creation is off by default. When enabled, auto-connect skips sessions with `parentID`; child-only SSE output is not relayed into the parent thread. Parent replies are still streamed normally. User-created Discord threads stay unconnected until `/connect` is run inside them.
 
 Typical flow:
 
@@ -33,7 +33,7 @@ Typical flow:
 
 ## npm 설치 (게시 후)
 
-1. [Node.js](https://nodejs.org/) 24 이상과 [OpenCode CLI](https://opencode.ai/docs/) v2를 설치합니다. 터미널에서 `node --version`과 `opencode --version`을 확인합니다. OpenCode가 실행되지 않으면 먼저 설치하거나 작업 폴더의 `.env`에서 `OPENCODE_EXECUTABLE`을 지정합니다.
+1. [Node.js](https://nodejs.org/) 24 이상과 [OpenCode CLI](https://opencode.ai/v2/docs/) v2를 설치합니다. 터미널에서 `node --version`과 `opencode --version`을 확인합니다. OpenCode가 실행되지 않으면 먼저 설치하거나 작업 폴더의 `.env`에서 `OPENCODE_EXECUTABLE`을 지정합니다.
 2. [Discord Developer Portal](https://discord.com/developers/applications)에서 앱과 봇을 만들고 토큰을 복사합니다. **Message Content Intent**를 켭니다. OAuth2 URL Generator에서 `bot`, `applications.commands` 범위를 선택해 서버에 초대합니다. 봇에는 **View Channel**, **Read Message History**, **Send Messages**, **Create Public Threads**, **Send Messages in Threads** 권한이 필요합니다. 사용자와 봇만 접근 가능한 텍스트 채널을 만드세요. Discord 사용자 설정에서 개발자 모드를 켠 뒤 서버·채널·본인 계정의 ID를 우클릭해 복사합니다.
 3. 봇 전용 작업 폴더를 만들고 그 폴더 안에 `config.yaml`을 저장합니다. 아래 **모든** 자리표시자를 실제 값으로 바꿉니다.
 
@@ -231,15 +231,19 @@ Useful scripts:
 | `pnpm service:restart` | Restart the LaunchAgent-managed process. |
 | `pnpm service:unsetup` | Stop, unload, and remove the macOS LaunchAgent. |
 
-Project conventions are documented in `AGENTS.md`. The short version is strict TypeScript, named exports, Zod config validation, `BotError` for structured errors, atomic state writes, and TDD for code changes.
+The code uses strict TypeScript, named exports, Zod config validation, `BotError` for structured errors, and atomic state writes. Add a regression test for each bug fix.
 
 ## Operational Notes
 
 The bot manages `opencode serve` processes itself unless a shared server is configured. It starts servers on demand, shares one server per project path, watches health, and persists process metadata in `state.json`. Auto-connect covers configured projects only; child sessions do not get separate threads. If a configured Discord channel is deleted, rerun setup or update `config.yaml` instead of silently creating an unrestricted replacement.
 
-동기화는 변경 시 1초부터 재시작하고, 변경이 없으면 최대 1분 간격까지 점차 느려집니다. 수동 `/sync now`는 즉시 실행합니다. 공유 OpenCode 서비스를 설정했다면 모든 프로젝트의 SSE를 해당 서비스에서 받습니다. CLI v2의 `session.step.started` 이벤트도 사용자 메시지 즉시 동기화를 시작합니다. 봇은 최근 OpenCode 응답과 실제 Discord 봇 메시지 시각을 비교합니다. 2분 이상 뒤처지면 해당 스레드에 경고하고 로그를 남깁니다(스레드당 10분에 한 번). 전송 확인 조회는 이력 동기화를 막지 않으며 스레드당 최대 1분에 한 번 실행합니다. 경고만으로 이전에 놓친 메시지를 자동 재전송하지는 않습니다. 시각 비교는 다른 봇 메시지나 최근 25건 밖의 응답을 완전히 구별하지 못하므로, 정확한 복구에는 메시지별 전송 확인 기록이 필요합니다. 사용자별 `allowedUsers`는 메시지와 승인 버튼을 제한하지만 읽기 권한까지 제한하지는 않습니다. 민감한 채널은 Discord에서도 접근을 제한하세요.
+이력 조회 간격은 최근 활동에 따라 달라집니다. 활동 후 10초 미만은 1초, 30초 미만은 2초, 60초 미만은 5초, 120초 미만은 10초, 그 이후는 15초입니다. 새 메시지나 변경을 감지하면 다시 빠르게 조회합니다. 이 간격은 전체 조회를 마친 뒤의 대기 시간이며 실제 전달 시간에는 각 세션의 조회·전송 시간도 포함됩니다. `/sync now`는 대기 시간을 건너뛰되 이미 진행 중인 조회가 있으면 그 조회를 기다립니다.
 
-연결된 모든 세션에서 **새로 작성한 OpenCode 사용자 메시지**도 해당 Discord 스레드에 자동 전송합니다. 사용자 메시지는 응답과 별도의 저장된 확인 ID로 복구합니다. 기존 기록은 사용자 메시지에 대해 소급 전송하지 않습니다. Discord에서 봇에 보낸 프롬프트는 출처를 표시해 되울림을 방지합니다. 첨부파일을 보내는 구형 프롬프트 경로는 출처 표시가 없어 최근 100개 Discord 메시지의 본문과 60초 이내 시각을 비교합니다. 같은 본문을 터미널에서 반복하면 한 건이 누락될 수 있습니다. `/inspect`는 현재 스레드의 최근 100개 OpenCode 메시지에서 유형별 개수를 표시합니다. 유형을 여러 개 선택하면 최근 5건을 항목당 최대 1,500자로 비공개 조회합니다. 기본 선택은 사용자·응답·생각입니다. 코드 블록은 별도 메시지 유형이 아니라 응답에 포함됩니다. 시스템 메시지와 도구 원문은 자동 전송하지 않으며, `/inspect`에서도 서버 관리자만 볼 수 있습니다. 선택 조회는 자동 전송 설정을 변경하지 않습니다.
+공유 OpenCode 서비스를 설정했다면 모든 프로젝트의 SSE를 해당 서비스에서 받습니다. CLI v2의 `session.step.started` 이벤트도 사용자 메시지 즉시 동기화를 시작합니다. 봇은 최근 OpenCode 응답과 Discord 봇 메시지 시각을 비교해 2분 이상 뒤처지면 해당 스레드에 경고하고 로그를 남깁니다(스레드당 10분에 한 번). 전송 확인 조회는 이력 동기화를 막지 않으며 스레드당 최대 1분에 한 번 실행합니다. 경고만으로 놓친 메시지를 재전송하지는 않습니다. 다른 봇 메시지나 최근 25건 밖의 응답을 시각만으로 완전히 구별할 수는 없습니다. 정확한 복구에는 메시지별 전송 확인 기록이 필요합니다.
+
+`allowedUsers`는 메시지와 승인 버튼을 제한할 뿐 읽기 권한까지 제한하지는 않습니다. 민감한 채널은 Discord에서도 접근을 제한하세요.
+
+연결된 모든 세션에서 **새로 작성한 OpenCode 사용자 메시지**도 해당 Discord 스레드에 자동 전송합니다. 사용자 메시지는 응답과 별도의 저장된 확인 ID로 복구합니다. 기존 기록은 사용자 메시지에 대해 소급 전송하지 않습니다. Discord에서 봇에 보낸 프롬프트는 출처를 표시해 되울림을 방지합니다. 첨부파일을 보내는 구형 프롬프트 경로는 출처 표시가 없어 최근 100개 Discord 메시지의 본문과 60초 이내 시각을 비교합니다. 같은 본문을 터미널에서 반복하면 한 건이 누락될 수 있습니다. `/inspect`는 현재 스레드의 최근 100개 OpenCode 메시지에서 유형별 개수를 표시합니다. 유형을 여러 개 선택하면 최근 5건을 항목당 최대 1,500자로 비공개 조회합니다. 기본 선택은 사용자·응답·생각입니다. 코드 블록은 별도 메시지 유형이 아니라 응답에 포함됩니다. 시스템 메시지와 도구 원문은 자동 전송하지 않으며 `/inspect`에서도 서버 관리자만 볼 수 있습니다. 선택 조회는 자동 전송 설정을 변경하지 않습니다.
 
 모델이 생성하는 reasoning의 언어는 봇이 강제할 수 없습니다. 일부 모델은 영어 reasoning summary를 보냅니다. 한국어 생성이 필수라면 해당 모델의 출력을 실환경에서 검증하기 전 공개 배포하지 마세요.
 
@@ -268,3 +272,14 @@ For production-like use:
 `npm pack --dry-run --json` shows the allowlisted package contents. The npm release includes compiled code, launch scripts, example config, example env file, README, and LICENSE. Never publish local `config.yaml`, `.env`, `state.json`, backups, or logs. The npm package runs locally; it is not a hosted Discord service. The Discord token stays in ignored `config.yaml`; the optional shared-server password stays in ignored `.env`. `.gitignore` does not remove already-tracked or historical files. A clean package installation was checked on Windows; first-run Discord/OpenCode setup on other machines has not been verified.
 
 OpenCord is based on [joaogsleite/opencode-discord](https://github.com/joaogsleite/opencode-discord) (ISC). This repository starts with a new public history so local configuration and development notes are not included.
+
+<!-- HUMANIZE-SUMMARY -->
+<!--
+상태: 완료 / 경로: heavy / finalize: accept
+원본 글자 수: 18486 / 최종 본문 글자 수: 18485
+게이트 변경률: 0.00% / 등급: B / 자체검증: 6/6 통과
+카테고리: C-11 연결어미 뒤 쉼표
+하이라이트: 시스템 메시지·도구 원문의 자동 전송과 관리자 조회 조건을 보존하고 연결어미 뒤 쉼표 1개만 제거.
+잔존 finding: 확정 finding 0건. A-1 약한 후보와 E-2 정상 기술 문체는 원문 보존.
+경고: 없음. 영어·코드·표·링크·수치·명령·목록 및 의미·레지스터 보존.
+-->

@@ -15,7 +15,8 @@ export function createSyncCommandHandler(controller: SyncController): CommandHan
     const subcommand = interaction.options.getSubcommand();
     if (subcommand === 'status') {
       const status = controller.getStatus();
-      await interaction.reply(`동기화: ${status.paused ? '일시정지' : '실행 중'}\n주기: ${status.intervalMinutes}분`);
+      const interval = status.intervalMinutes < 1 ? `${Math.round(status.intervalMinutes * 60)}초` : `${status.intervalMinutes}분`;
+      await interaction.reply(`동기화: ${status.paused ? '일시정지' : '실행 중'}\n주기: ${interval}`);
       return;
     }
     if (subcommand === 'now') {

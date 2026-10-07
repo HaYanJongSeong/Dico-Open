@@ -37,6 +37,7 @@ export interface ConnectCommandDependencies {
   stateManager: StateReader;
   serverManager: { ensureRunning(projectPath: string): Promise<unknown> };
   sessionBridge: Pick<SessionBridge, 'connectToSession'>;
+  rememberThread?: (threadId: string, thread: ThreadLike) => void;
 }
 
 /**
@@ -55,6 +56,7 @@ export function createConnectCommandHandler(deps: ConnectCommandDependencies): C
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     const client = await deps.serverManager.ensureRunning(channelConfig.projectPath) as OpencodeSessionClient;
     const thread = currentThread ?? await createThread(interaction, title);
+    deps.rememberThread?.(thread.id, thread);
 
     await deps.sessionBridge.connectToSession({
       client,

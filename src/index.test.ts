@@ -383,7 +383,8 @@ describe('startBot', () => {
       setInterval,
       clearInterval,
     }));
-    expect(started.lifecycleController).toBe(lifecycleController);
+    await started.lifecycleController.runInactivityCheck();
+    expect(lifecycleController.runInactivityCheck).toHaveBeenCalledOnce();
 
     const lifecycleOptions = registerLifecycleHandlers.mock.calls[0]?.[1];
     expect(lifecycleOptions).toBeDefined();

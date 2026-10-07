@@ -147,7 +147,7 @@ describe('SessionBridge', () => {
       title: 'Task thread',
     });
 
-    expect(streamSubscriber.subscribe).toHaveBeenCalledWith('thread-1', 'session-123', client, expect.any(Set));
+    expect(streamSubscriber.subscribe).toHaveBeenCalledWith('thread-1', 'session-123', client, expect.any(Set), '/repo');
     expect(calls).toEqual(['set:thread-1:session-123', 'subscribe:thread-1:session-123']);
   });
 
@@ -214,7 +214,7 @@ describe('SessionBridge', () => {
 
     await bridge.sendPrompt('thread-1', { client, content: 'after restart' });
 
-    expect(streamSubscriber.subscribe).toHaveBeenCalledWith('thread-1', 'session-1', client, expect.any(Set));
+    expect(streamSubscriber.subscribe).toHaveBeenCalledWith('thread-1', 'session-1', client, expect.any(Set), '/repo');
     expect(streamSubscriber.subscribe).toHaveBeenCalledBefore(client.session.promptAsync as never);
   });
 
@@ -308,8 +308,8 @@ describe('SessionBridge', () => {
     await bridge.sendPrompt('thread-1', { client, content: 'after archived idle' });
 
     expect(streamSubscriber.subscribe).toHaveBeenCalledTimes(2);
-    expect(streamSubscriber.subscribe).toHaveBeenNthCalledWith(1, 'thread-1', 'session-1', client, expect.any(Set));
-    expect(streamSubscriber.subscribe).toHaveBeenNthCalledWith(2, 'thread-1', 'session-1', client, expect.any(Set));
+    expect(streamSubscriber.subscribe).toHaveBeenNthCalledWith(1, 'thread-1', 'session-1', client, expect.any(Set), '/repo');
+    expect(streamSubscriber.subscribe).toHaveBeenNthCalledWith(2, 'thread-1', 'session-1', client, expect.any(Set), '/repo');
   });
 
   it('connects to an existing session, replays history, subscribes streams, and recovers gaps', async () => {
@@ -358,7 +358,7 @@ describe('SessionBridge', () => {
       userMirrorSince: 3000,
       status: 'active',
     });
-    expect(streamSubscriber.subscribe).toHaveBeenCalledWith('thread-1', 'session-1', client, expect.any(Set));
+    expect(streamSubscriber.subscribe).toHaveBeenCalledWith('thread-1', 'session-1', client, expect.any(Set), '/repo');
     expect(client.session.messages).toHaveBeenNthCalledWith(1, { sessionID: 'session-1', limit: 2 });
     expect(thread.send).toHaveBeenNthCalledWith(1, 'done');
     expect(thread.send).toHaveBeenNthCalledWith(2, '세션 `session-1`에 연결했습니다.');
@@ -381,6 +381,49 @@ describe('SessionBridge', () => {
     expect(stateManager.setSession).not.toHaveBeenCalled();
     expect(streamSubscriber.subscribe).not.toHaveBeenCalled();
     expect(thread.send).not.toHaveBeenCalled();
+  });
+
+  it.each(['active', 'inactive'] as const)('rejects replacing a different %s session before any SDK call or state write', async (status) => {
+    const { bridge, stateManager, streamSubscriber } = createBridge();
+    const previous: SessionState = {
+      sessionId: 'session-old', guildId: 'guild-1', channelId: 'channel-1', projectPath: '/old-repo',
+      agent: 'build', model: null, createdBy: 'user-1', createdAt: 500, lastActivityAt: 500, status,
+    };
+    stateManager.sessions.set('thread-1', previous);
+    const client = createClient();
+    const thread = { send: vi.fn(async () => undefined) };
+
+    await expect(bridge.connectToSession({
+      client, thread, threadId: 'thread-1', guildId: 'guild-1', channelId: 'channel-1',
+      projectPath: '/repo', sessionId: 'session-1', agent: 'build', createdBy: 'user-1',
+    })).rejects.toMatchObject({ code: ErrorCode.SESSION_ALREADY_ATTACHED });
+
+    expect(client.session.get).not.toHaveBeenCalled();
+    expect(client.session.messages).not.toHaveBeenCalled();
+    expect(stateManager.setSession).not.toHaveBeenCalled();
+    expect(streamSubscriber.subscribe).not.toHaveBeenCalled();
+    expect(thread.send).not.toHaveBeenCalled();
+    expect(stateManager.sessions.get('thread-1')).toBe(previous);
+  });
+
+  it.each([
+    { sessionId: 'session-old', status: 'ended' },
+    { sessionId: 'session-1', status: 'active' },
+  ] as const)('allows connecting over $status mapping to $sessionId', async ({ sessionId, status }) => {
+    const { bridge, stateManager, streamSubscriber } = createBridge();
+    stateManager.sessions.set('thread-1', {
+      sessionId, guildId: 'guild-1', channelId: 'channel-1', projectPath: '/old-repo',
+      agent: 'build', model: null, createdBy: 'user-1', createdAt: 500, lastActivityAt: 500, status,
+    });
+    const client = createClient();
+
+    await bridge.connectToSession({
+      client, thread: { send: vi.fn(async () => undefined) }, threadId: 'thread-1', guildId: 'guild-1', channelId: 'channel-1',
+      projectPath: '/repo', sessionId: 'session-1', agent: 'build', createdBy: 'user-1',
+    });
+
+    expect(stateManager.sessions.get('thread-1')).toMatchObject({ sessionId: 'session-1', status: 'active', projectPath: '/repo' });
+    expect(streamSubscriber.subscribe).toHaveBeenCalledWith('thread-1', 'session-1', client, bridge.getDedupeSet('thread-1'), '/repo');
   });
 
   it('distinguishes a confirmed missing session from a temporary lookup failure', async () => {
@@ -423,7 +466,7 @@ describe('SessionBridge', () => {
       thread,
     });
 
-    expect(streamSubscriber.subscribe).toHaveBeenCalledWith('thread-1', 'session-1', client, expect.any(Set));
+    expect(streamSubscriber.subscribe).toHaveBeenCalledWith('thread-1', 'session-1', client, expect.any(Set), '/repo');
     expect(thread.send).toHaveBeenCalledWith('세션 `session-1`에 연결했습니다.');
   });
 

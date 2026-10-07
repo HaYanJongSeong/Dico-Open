@@ -71,6 +71,19 @@ describe('createConnectCommandHandler', () => {
     }));
   });
 
+  it.each([false, true])('registers the acquired thread before connecting (current thread: %s)', async (isCurrentThread) => {
+    const thread = { id: 'thread-1', send: vi.fn(async () => undefined), isThread: () => true };
+    const deps = createDeps();
+    const rememberThread = vi.fn();
+    Object.assign(deps, { rememberThread });
+    const channel = isCurrentThread ? thread : { threads: { create: vi.fn(async () => thread) } };
+
+    await createConnectCommandHandler(deps)(createInteraction({ channel }), { correlationId: 'corr-1', channelConfig });
+
+    expect(rememberThread).toHaveBeenCalledWith(thread.id, thread);
+    expect(rememberThread).toHaveBeenCalledBefore(vi.mocked(deps.sessionBridge.connectToSession));
+  });
+
   it('connects the current Discord thread without creating another thread', async () => {
     const thread = {
       id: 'thread-existing',
