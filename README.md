@@ -1,4 +1,4 @@
-# Dis-code
+# Dico-Open
 
 [한국어](README.md) | [English](README.en.md)
 
@@ -20,7 +20,7 @@ Node.js와 TypeScript로 작성했으며 `discord.js` v14와 `@opencode-ai/sdk/v
 4. 스레드에 일반 메시지를 보내 OpenCode 에이전트와 대화합니다.
 5. 스레드의 슬래시 명령으로 에이전트·모델 선택, 작업 중단, 변경 사항 확인, 동기화를 수행합니다.
 
-> npm 패키지명과 실행 명령은 `dis-code`입니다. **`npx opencord`는 다른 프로젝트이므로 실행하지 마세요.**
+> npm 패키지명과 실행 명령은 `dico-open`입니다. **`npx opencord`는 다른 프로젝트이므로 실행하지 마세요.**
 
 ## 요구 사항
 
@@ -35,7 +35,7 @@ Node.js와 TypeScript로 작성했으며 `discord.js` v14와 `@opencode-ai/sdk/v
 
 ## npm 설치
 
-소스 빌드 없이 `npx dis-code`로 실행합니다. Discord 봇과 로컬 설정은 먼저 준비해야 합니다.
+소스 빌드 없이 `npx dico-open`로 실행합니다. Discord 봇과 로컬 설정은 먼저 준비해야 합니다.
 
 1. [Node.js](https://nodejs.org/) 24 이상과 [OpenCode CLI](https://opencode.ai/v2/docs/) v2를 설치합니다. 터미널에서 `node --version`과 `opencode --version`을 확인합니다. OpenCode가 실행되지 않으면 먼저 설치하거나 작업 폴더의 `.env`에서 `OPENCODE_EXECUTABLE`을 지정합니다.
 2. [Discord Developer Portal](https://discord.com/developers/applications)에서 앱과 봇을 만들고 토큰을 복사합니다. **Message Content Intent**를 켭니다. OAuth2 URL Generator에서 `bot`, `applications.commands` 범위를 선택해 서버에 초대합니다. 봇에는 **View Channel**, **Read Message History**, **Send Messages**, **Create Public Threads**, **Send Messages in Threads** 권한이 필요합니다. 사용자와 봇만 접근 가능한 텍스트 채널을 만드세요. Discord 사용자 설정에서 개발자 모드를 켠 뒤 서버·채널·본인 계정의 ID를 우클릭해 복사합니다.
@@ -58,7 +58,7 @@ servers:
 4. 같은 작업 폴더를 현재 디렉터리로 두고 실행합니다.
 
 ```bash
-npx dis-code
+npx dico-open
 ```
 
 첫 실행 시 npm 패키지를 내려받고 설치 확인을 요청할 수 있습니다. 터미널을 켜 두세요. 종료는 Ctrl+C입니다. 봇은 **현재 작업 폴더**에서 `config.yaml`과 선택적 `.env`를 읽고 `state.json`을 만듭니다. Discord 채널에서 `/help`, `/new`를 실행하고 새 스레드에 메시지를 보내 확인하세요. 봇은 하나만 실행하세요. `npx`는 Discord 봇·채널·`config.yaml`을 만들지 않습니다. **`npx opencord`는 다른 프로젝트이므로 실행하지 마세요.**
@@ -66,7 +66,7 @@ npx dis-code
 ## 소스 설치
 
 1. [Developer Portal](https://discord.com/developers/applications)에서 Discord 애플리케이션과 봇을 만듭니다. **Message Content Intent**를 켭니다. `bot`과 `applications.commands` 범위를 선택해 봇을 초대합니다. 프로젝트 채널 보기, 메시지 보내기·읽기, 공개 스레드 만들기·메시지 보내기 권한을 부여하세요. 채널을 만드는 설정 마법사에는 **Manage Channels** 권한도 필요합니다.
-2. 프로젝트가 있는 컴퓨터에 Node.js 24 이상, pnpm 10.33.1, OpenCode CLI v2를 설치합니다. [GitHub](https://github.com/HaYanJongSeong/Dis-code)에서 이 저장소의 ZIP을 내려받아 압축을 풉니다. 압축을 푼 디렉터리에서 터미널을 여세요.
+2. 프로젝트가 있는 컴퓨터에 Node.js 24 이상, pnpm 10.33.1, OpenCode CLI v2를 설치합니다. [GitHub](https://github.com/HaYanJongSeong/Dico-Open)에서 이 저장소의 ZIP을 내려받아 압축을 풉니다. 압축을 푼 디렉터리에서 터미널을 여세요.
 3. 의존성을 설치하고 빌드합니다.
 
 ```bash
@@ -81,7 +81,7 @@ pnpm build
 pnpm start
 ```
 
-Windows에서는 `dis-code.cmd`를 더블클릭하거나 PowerShell에서 `.\dis-code.cmd`를 실행해도 됩니다. 터미널 창을 띄우고 오류가 나면 다시 실행합니다. 봇은 하나만 실행하세요. 연결된 채널에서 `/help`, 이어서 `/new`를 확인합니다. 외부에서 만든 OpenCode 세션마다 Discord 스레드를 만들려는 경우에만 `autoConnect: true`를 설정하세요.
+Windows에서는 `dico-open.cmd`를 더블클릭하거나 PowerShell에서 `.\dico-open.cmd`를 실행해도 됩니다. 터미널 창을 띄우고 오류가 나면 다시 실행합니다. 봇은 하나만 실행하세요. 연결된 채널에서 `/help`, 이어서 `/new`를 확인합니다. 외부에서 만든 OpenCode 세션마다 Discord 스레드를 만들려는 경우에만 `autoConnect: true`를 설정하세요.
 
 Discord 봇 토큰은 현재 **환경 변수가 아닌 로컬 `config.yaml`**에 저장합니다. `config.yaml`과 `.env`는 npm 패키지에서 제외하며 git에서도 무시합니다. 기존 공유 OpenCode 서버를 사용한다면 `.env.example`을 `.env`로 복사하고 `OPENCODE_SERVER_PASSWORD`, `OPENCODE_SHARED_SERVER_URL`, `OPENCODE_SHARED_SERVER_PROJECT`를 설정하세요. CLI는 봇 모듈을 불러오기 전에 현재 작업 디렉터리의 `.env`를 읽습니다. 이미 설정된 환경 변수가 우선합니다. 로컬 설정, 상태, 자격 증명, 백업, 로그를 업로드하지 마세요. 파일을 무시하도록 설정해도 이미 저장소 이력에 커밋한 내용은 지워지지 않습니다.
 
@@ -103,7 +103,7 @@ pnpm build
 
 ## 설치 검증 범위
 
-프로젝트 이름을 Open_Cord에서 Dis-code로 변경했습니다. 아래 `@hayanjongseong/open_cord` 검증 결과는 이전 이름으로 게시한 패키지에 관한 기록입니다. 기존 패키지는 삭제하지 않습니다.
+프로젝트 이름을 Open_Cord에서 Dico-Open으로 변경했습니다. 아래 `@hayanjongseong/open_cord` 검증 결과는 이전 이름으로 게시한 패키지에 관한 기록입니다. 기존 패키지는 삭제하지 않습니다.
 
 `@hayanjongseong/open_cord@0.1.0`을 npm에 공개했습니다. 레지스트리의 `latest=0.1.0`과 배포 파일의 SHA-512 일치를 확인했습니다. 별도 Windows 디렉터리에서 npm 설치와 새 캐시를 사용하는 `npx @hayanjongseong/open_cord@0.1.0` 실행도 검사했습니다. 두 경로 모두 실행 파일을 불러왔고 로컬 `config.yaml`이 없으면 예상한 설정 오류로 종료했습니다. 이 검사는 패키지 다운로드·실행 검증이며 새 Discord 봇의 최초 연결 검증은 아닙니다.
 
@@ -181,7 +181,7 @@ $OutputEncoding = [Text.UTF8Encoding]::new($false)
 
 `config.yaml`, `state.json`, 로그, 봇 토큰, OpenCode 서버 비밀번호를 커밋하지 마세요.
 
-Windows Terminal 창을 띄우고 오류 후 2초 뒤 재시작하려면 **`pnpm build`를 마친 뒤** `dis-code.cmd`를 실행하세요. 이 파일은 `scripts\start-visible.cmd`를 호출하며 해당 스크립트는 `.env`에서 비밀번호를 읽습니다. 두 스크립트 모두 자격 증명을 포함하지 않습니다. `.env` 변경 내용을 불러오려면 봇을 재시작하세요.
+Windows Terminal 창을 띄우고 오류 후 2초 뒤 재시작하려면 **`pnpm build`를 마친 뒤** `dico-open.cmd`를 실행하세요. 이 파일은 `scripts\start-visible.cmd`를 호출하며 해당 스크립트는 `.env`에서 비밀번호를 읽습니다. 두 스크립트 모두 자격 증명을 포함하지 않습니다. `.env` 변경 내용을 불러오려면 봇을 재시작하세요.
 
 ## Discord 사용법
 
@@ -296,7 +296,7 @@ macOS 백그라운드 서비스는 `pnpm service:*` 스크립트로 관리합니
 
 `npm pack --dry-run --json`으로 허용 목록에 포함된 패키지 내용을 확인합니다. npm 배포 구성에는 컴파일된 코드, 실행 스크립트, 예제 설정, 예제 환경 변수 파일, README, LICENSE가 포함됩니다. 로컬 `config.yaml`, `.env`, `state.json`, 백업, 로그를 게시하지 마세요. npm 패키지는 로컬에서 실행하며 호스팅형 Discord 서비스가 아닙니다. Discord 토큰은 git에서 무시하는 `config.yaml`에, 선택적인 공유 서버 비밀번호는 git에서 무시하는 `.env`에 남습니다. `.gitignore`는 이미 추적 중인 파일이나 이력을 지우지 않습니다. Windows에서 깨끗한 환경의 패키지 설치를 확인했지만 다른 컴퓨터에서 Discord와 OpenCode의 최초 설정 과정은 검증하지 않았습니다.
 
-Dis-code는 [joaogsleite/opencode-discord](https://github.com/joaogsleite/opencode-discord)(ISC)를 바탕으로 만들었습니다. 로컬 설정과 개발 메모가 포함되지 않도록 이 저장소는 새 공개 이력으로 시작합니다.
+Dico-Open은 [joaogsleite/opencode-discord](https://github.com/joaogsleite/opencode-discord)(ISC)를 바탕으로 만들었습니다. 로컬 설정과 개발 메모가 포함되지 않도록 이 저장소는 새 공개 이력으로 시작합니다.
 
 <!-- HUMANIZE-SUMMARY -->
 <!--

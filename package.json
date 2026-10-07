@@ -1,13 +1,13 @@
 {
-  "name": "dis-code",
+  "name": "dico-open",
   "version": "0.1.0",
-  "description": "Dis-code bridges OpenCode CLI v2 sessions with Discord threads",
-  "repository": "https://github.com/HaYanJongSeong/Dis-code",
+  "description": "Dico-Open bridges OpenCode CLI v2 sessions with Discord threads",
+  "repository": "https://github.com/HaYanJongSeong/Dico-Open",
   "type": "module",
   "main": "dist/src/index.js",
   "types": "dist/src/index.d.ts",
-  "bin": { "dis-code": "dist/src/cli.js" },
-  "files": ["dist/src/", "dist/scripts/discord/", "scripts/*.sh", "scripts/start-visible.cmd", "dis-code.cmd", "config.example.yaml", ".env.example", "README.md", "README.en.md", "LICENSE"],
+  "bin": { "dico-open": "dist/src/cli.js" },
+  "files": ["dist/src/", "dist/scripts/discord/", "scripts/*.sh", "scripts/start-visible.cmd", "dico-open.cmd", "config.example.yaml", ".env.example", "README.md", "README.en.md", "LICENSE"],
   "engines": { "node": ">=24" },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",

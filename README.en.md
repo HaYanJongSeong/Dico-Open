@@ -1,8 +1,8 @@
-# Dis-code
+# Dico-Open
 
 [한국어](README.md) | [English](README.en.md)
 
-Dis-code is a Discord bridge built through vibe coding because the existing Kimaki did not work with OpenCode CLI v2.
+Dico-Open is a Discord bridge built through vibe coding because the existing Kimaki did not work with OpenCode CLI v2.
 
 Discord channels map to local projects, and threads map to OpenCode sessions. Use `/new` or `/connect` to link a session. Existing connections recover after a restart. External sessions get new threads only when `autoConnect: true` is enabled.
 
@@ -20,7 +20,7 @@ Typical flow:
 4. Send normal messages in the thread to talk to the OpenCode agent.
 5. Use slash commands in the thread for agent/model selection, interruption, diffs, and synchronization.
 
-> The npm package name and executable are `dis-code`. Do not run `npx opencord`; it is a different project.
+> The npm package name and executable are `dico-open`. Do not run `npx opencord`; it is a different project.
 
 ## Requirements
 
@@ -35,7 +35,7 @@ Typical flow:
 
 ## npm installation
 
-Run `npx dis-code` without building from source. Set up your Discord bot and local configuration first.
+Run `npx dico-open` without building from source. Set up your Discord bot and local configuration first.
 
 1. Install [Node.js](https://nodejs.org/) 24 or newer and [OpenCode CLI](https://opencode.ai/v2/docs/) v2. Check `node --version` and `opencode --version` in a terminal. If OpenCode does not start, install it first or set `OPENCODE_EXECUTABLE` in the working directory's `.env`.
 2. Create an application and bot in the [Discord Developer Portal](https://discord.com/developers/applications), then copy the token. Enable Message Content Intent. In the OAuth2 URL Generator, select the `bot` and `applications.commands` scopes and invite the bot to your server. The bot needs View Channel, Read Message History, Send Messages, Create Public Threads, and Send Messages in Threads permissions. Create a text channel that only you and the bot can access. Enable Developer Mode in Discord's user settings, then right-click to copy the server, channel, and your own account IDs.
@@ -58,7 +58,7 @@ servers:
 4. Run the following with that working directory as your current directory:
 
 ```bash
-npx dis-code
+npx dico-open
 ```
 
 On the first run, npm may download the package and ask you to confirm installation. Keep the terminal open; press Ctrl+C to stop. The bot reads `config.yaml` and the optional `.env` from the current working directory and creates `state.json` there. Run `/help` and `/new` in the Discord channel, then send a message in the new thread to check the connection. Run only one bot instance. `npx` does not create the Discord bot, channel, or `config.yaml` for you. Do not run `npx opencord`; it is a different project.
@@ -66,7 +66,7 @@ On the first run, npm may download the package and ask you to confirm installati
 ## Install from source
 
 1. Create a Discord application and bot in the [Developer Portal](https://discord.com/developers/applications). Enable Message Content Intent. Invite the bot with the `bot` and `applications.commands` scopes. Give it permission to view the project channel, send/read messages, and create/send in public threads. A channel-creating setup wizard also needs Manage Channels.
-2. Install Node.js 24+, pnpm 10.33.1, and OpenCode CLI v2 on the computer that hosts your projects. Download and extract this repository's ZIP from [GitHub](https://github.com/HaYanJongSeong/Dis-code). Open a terminal in the extracted directory.
+2. Install Node.js 24+, pnpm 10.33.1, and OpenCode CLI v2 on the computer that hosts your projects. Download and extract this repository's ZIP from [GitHub](https://github.com/HaYanJongSeong/Dico-Open). Open a terminal in the extracted directory.
 3. Install and build:
 
 ```bash
@@ -81,7 +81,7 @@ pnpm build
 pnpm start
 ```
 
-On Windows, double-click `dis-code.cmd` instead (or run `.\dis-code.cmd` in PowerShell). It opens a visible terminal and retries after errors. Start only one bot instance. Test `/help` in the mapped channel, then `/new`. Set `autoConnect: true` only when you intentionally want every externally created OpenCode session to get a Discord thread.
+On Windows, double-click `dico-open.cmd` instead (or run `.\dico-open.cmd` in PowerShell). It opens a visible terminal and retries after errors. Start only one bot instance. Test `/help` in the mapped channel, then `/new`. Set `autoConnect: true` only when you intentionally want every externally created OpenCode session to get a Discord thread.
 
 The Discord bot token is currently stored in local `config.yaml`, not an environment variable. Both `config.yaml` and `.env` are excluded from the npm package and ignored by git. For a pre-existing shared OpenCode server, copy `.env.example` to `.env` and set `OPENCODE_SERVER_PASSWORD`, `OPENCODE_SHARED_SERVER_URL`, and `OPENCODE_SHARED_SERVER_PROJECT`. The CLI reads `.env` from the current working directory before loading bot modules; existing environment variables take precedence. Never upload local config, state, credentials, backups, or logs. Ignoring files does not remove anything already committed to repository history.
 
@@ -103,7 +103,7 @@ pnpm build
 
 ## Installation verification
 
-The project was renamed from Open_Cord to Dis-code. The `@hayanjongseong/open_cord` checks below describe the package published under the previous name. That package remains available.
+The project was renamed from Open_Cord to Dico-Open. The `@hayanjongseong/open_cord` checks below describe the package published under the previous name. That package remains available.
 
 `@hayanjongseong/open_cord@0.1.0` is public on npm. The registry's `latest` tag points to `0.1.0`, and its SHA-512 integrity matches the release archive. Both npm installation and `npx @hayanjongseong/open_cord@0.1.0` with a fresh cache were checked in separate Windows directories. Both loaded the executable and rejected a missing local `config.yaml` with the expected configuration error. These checks cover package download and startup, not first-time setup with a new Discord bot.
 
@@ -181,7 +181,7 @@ $OutputEncoding = [Text.UTF8Encoding]::new($false)
 
 Do not commit `config.yaml`, `state.json`, logs, bot tokens, or OpenCode server passwords.
 
-For a visible Windows Terminal session with a two-second restart after an error, run `dis-code.cmd` after `pnpm build`. It calls `scripts\start-visible.cmd`, which reads the password from `.env`; neither script contains credentials. Restart the bot to load changed `.env` values.
+For a visible Windows Terminal session with a two-second restart after an error, run `dico-open.cmd` after `pnpm build`. It calls `scripts\start-visible.cmd`, which reads the password from `.env`; neither script contains credentials. Restart the bot to load changed `.env` values.
 
 ## Discord usage
 
@@ -294,4 +294,4 @@ For production-like use:
 
 `npm pack --dry-run --json` shows the allowlisted package contents. The npm release includes compiled code, launch scripts, example config, example env file, README, and LICENSE. Never publish local `config.yaml`, `.env`, `state.json`, backups, or logs. The npm package runs locally; it is not a hosted Discord service. The Discord token stays in ignored `config.yaml`; the optional shared-server password stays in ignored `.env`. `.gitignore` does not remove already-tracked or historical files. A clean package installation was checked on Windows; first-run Discord/OpenCode setup on other machines has not been verified.
 
-Dis-code is based on [joaogsleite/opencode-discord](https://github.com/joaogsleite/opencode-discord) (ISC). This repository starts with a new public history so local configuration and development notes are not included.
+Dico-Open is based on [joaogsleite/opencode-discord](https://github.com/joaogsleite/opencode-discord) (ISC). This repository starts with a new public history so local configuration and development notes are not included.
