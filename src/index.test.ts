@@ -1,13 +1,24 @@
 import { pathToFileURL } from 'node:url';
 import { MessageFlags } from 'discord.js';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { isDirectEntrypoint, isDiscordSyncStalled, runCli, startBot as realStartBot } from './index.js';
+import { getAdaptiveSyncDelay, isDirectEntrypoint, isDiscordSyncStalled, runCli, startBot as realStartBot } from './index.js';
 import type { StartedBot, StartBotOptions } from './index.js';
 import type { BotState, ServerState, SessionState } from './state/types.js';
 import type { SessionBridge } from './opencode/sessionBridge.js';
 import { BotError, ErrorCode } from './utils/errors.js';
 
 const startedBots: StartedBot[] = [];
+
+describe('적응형 동기화 간격', () => {
+  it('활동 직후 빠르게 조회하고 유휴 상태에서는 최대 15초까지 늦춘다', () => {
+    const activity = 1_000_000;
+    expect([0, 9_999, 10_000, 29_999, 30_000, 59_999, 60_000, 119_999, 120_000, 600_000]
+      .map((elapsed) => getAdaptiveSyncDelay(activity, activity + elapsed)))
+      .toEqual([1, 1, 2, 2, 5, 5, 10, 10, 15, 15]);
+    expect(getAdaptiveSyncDelay(activity, activity - 1)).toBe(1);
+    expect(getAdaptiveSyncDelay(activity + 600_000, activity + 600_000)).toBe(1);
+  });
+});
 
 async function startBot(options: StartBotOptions = {}): Promise<StartedBot> {
   const started = await realStartBot(options);

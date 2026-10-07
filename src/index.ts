@@ -185,6 +185,11 @@ export interface RunCliOptions {
  * @param argv - Process argv array to inspect
  * @returns True when argv[1] resolves to this module file
  */
+export function getAdaptiveSyncDelay(lastActivityAt: number, now = Date.now()): number {
+  const idleSeconds = Math.max(0, now - lastActivityAt) / 1000;
+  return idleSeconds < 10 ? 1 : idleSeconds < 30 ? 2 : idleSeconds < 60 ? 5 : idleSeconds < 120 ? 10 : 15;
+}
+
 export function isDirectEntrypoint(moduleUrl: string, argv: string[]): boolean {
   const entrypoint = argv[1];
   return entrypoint !== undefined && resolve(fileURLToPath(moduleUrl)) === resolve(entrypoint);
@@ -340,8 +345,11 @@ export async function startBot(options: StartBotOptions = {}): Promise<StartedBo
   }
 
   let runSyncNow = async (): Promise<void> => undefined;
+  const syncClock = (): number => options.now?.() ?? Date.now();
+  let lastSyncActivityAt = syncClock();
+  const syncDelay = (): number => getAdaptiveSyncDelay(lastSyncActivityAt, syncClock());
   const syncController: SyncController = {
-    getStatus: () => ({ intervalMinutes: 1, paused: false }),
+    getStatus: () => ({ intervalMinutes: syncDelay() / 60, paused: false }),
     runNow: async () => await runSyncNow(),
     wake: () => wakeSync(),
   };
@@ -523,7 +531,10 @@ export async function startBot(options: StartBotOptions = {}): Promise<StartedBo
             historyLimit: 5,
              thread,
            });
-             const now = options.now?.() ?? Date.now();
+              const now = options.now?.() ?? Date.now();
+              lastSyncActivityAt = Math.max(lastSyncActivityAt,
+                Math.min(now, replay.latestAssistantAt ?? 0),
+                Math.min(now, stateManager.getSession(threadId)?.lastSyncedUserAt ?? 0));
              if (now - (deliveryWarnings.get(threadId) ?? 0) >= 600_000
                && replay.latestAssistantAt !== undefined && now - replay.latestAssistantAt >= 120_000
                && now - (deliveryChecks.get(threadId) ?? 0) >= 60_000 && discordClient.user?.id) {
@@ -572,37 +583,25 @@ export async function startBot(options: StartBotOptions = {}): Promise<StartedBo
       return syncInFlight;
     };
     runSyncNow = async () => { await syncNow(); };
-    const delays = [1, 5, 30, 60, 300, 600];
-    let delayIndex = 0;
-    let unchangedChecks = 0;
     let historyPoller: ReturnType<typeof setTimeout> | undefined;
     const scheduleSync = (): void => {
       if (historyPoller !== undefined) clearTimeout(historyPoller);
-      const delaySeconds = Math.min(delays[delayIndex] ?? 600, 60);
+      const delaySeconds = syncDelay();
       historyPoller = setTimeout(() => {
         void syncNow().then((changed) => {
-          if (changed) {
-            delayIndex = 0;
-            unchangedChecks = 0;
-          } else if (delayIndex === 0 && unchangedChecks < 9) {
-            unchangedChecks += 1;
-          } else {
-            delayIndex = Math.min(delayIndex + 1, delays.length - 1);
-            unchangedChecks = 0;
-          }
+          if (changed) lastSyncActivityAt = syncClock();
           scheduleSync();
         });
       }, delaySeconds * 1000);
       historyPoller.unref?.();
     };
     wakeSync = (): void => {
-      delayIndex = 0;
-      unchangedChecks = 0;
+      lastSyncActivityAt = syncClock();
       if (historyPoller !== undefined) clearTimeout(historyPoller);
       void syncNow().then(() => scheduleSync());
     };
     scheduleSync();
-    startupLogger.info('세션 동기화 활성화', { interval: '변경 시 1초, 무변경 시 점진적 증가', maxIntervalMinutes: 1, historyRecovery: '최근 메시지 조회' });
+    startupLogger.info('세션 동기화 활성화', { interval: '최근 활동 기준 1·2·5·10·15초 적응형', maxIntervalMinutes: 0.25, historyRecovery: '최근 메시지 조회' });
 
   configLoader.onChange?.((nextConfig) => {
     config = nextConfig;
