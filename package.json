@@ -1,13 +1,13 @@
 {
-  "name": "@hayanjongseong/open_cord",
+  "name": "dis-code",
   "version": "0.1.0",
-  "description": "Open_Cord bridges OpenCode CLI v2 sessions with Discord threads",
-  "repository": "https://github.com/HaYanJongSeong/Open_Cord",
+  "description": "Dis-code bridges OpenCode CLI v2 sessions with Discord threads",
+  "repository": "https://github.com/HaYanJongSeong/Dis-code",
   "type": "module",
   "main": "dist/src/index.js",
   "types": "dist/src/index.d.ts",
-  "bin": { "open_cord": "dist/src/cli.js" },
-  "files": ["dist/src/", "dist/scripts/discord/", "scripts/*.sh", "scripts/start-visible.cmd", "opencord.cmd", "config.example.yaml", ".env.example", "README.md", "README.en.md", "LICENSE"],
+  "bin": { "dis-code": "dist/src/cli.js" },
+  "files": ["dist/src/", "dist/scripts/discord/", "scripts/*.sh", "scripts/start-visible.cmd", "dis-code.cmd", "config.example.yaml", ".env.example", "README.md", "README.en.md", "LICENSE"],
   "engines": { "node": ">=24" },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",

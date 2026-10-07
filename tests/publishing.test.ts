@@ -11,16 +11,16 @@ describe('publishing', () => {
     const ignore = readFileSync(new URL('../.gitignore', import.meta.url), 'utf8');
     expect(pkg.main).toBe('dist/src/index.js');
     expect(pkg.types).toBe('dist/src/index.d.ts');
-    expect(pkg.name).toBe('@hayanjongseong/open_cord');
+    expect(pkg.name).toBe('dis-code');
     expect(pkg.version).toBe('0.1.0');
-    expect(pkg.repository).toBe('https://github.com/HaYanJongSeong/Open_Cord');
+    expect(pkg.repository).toBe('https://github.com/HaYanJongSeong/Dis-code');
     expect(pkg.private).toBeUndefined();
-    expect(pkg.bin?.open_cord).toBe('dist/src/cli.js');
-    expect(Object.keys(pkg.bin ?? {})).toEqual(['open_cord']);
+    expect(pkg.bin?.['dis-code']).toBe('dist/src/cli.js');
+    expect(Object.keys(pkg.bin ?? {})).toEqual(['dis-code']);
     expect(pkg.scripts.build).toBeTruthy();
     expect(pkg.files).toContain('dist/src/');
     expect(pkg.files).toContain('dist/scripts/discord/');
-    expect(pkg.files).toContain('opencord.cmd');
+    expect(pkg.files).toContain('dis-code.cmd');
     expect(pkg.files).not.toContain('scripts/');
     expect(pkg.scripts['discord:guilds']).toBe('node dist/scripts/discord/guilds.js');
     expect(pkg.files).not.toContain('HANDOFF.md');
@@ -33,7 +33,7 @@ describe('publishing', () => {
   });
 
   it('starts the existing visible Windows launcher from the repository root', () => {
-    const launcher = readFileSync(new URL('../opencord.cmd', import.meta.url), 'utf8');
+    const launcher = readFileSync(new URL('../dis-code.cmd', import.meta.url), 'utf8');
     expect(launcher).toContain('call "%~dp0scripts\\start-visible.cmd"');
   });
 
