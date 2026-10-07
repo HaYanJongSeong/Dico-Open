@@ -1,5 +1,5 @@
 {
-  "name": "open_cord",
+  "name": "@hayanjongseong/open_cord",
   "version": "0.1.0",
   "description": "Open_Cord bridges OpenCode CLI v2 sessions with Discord threads",
   "repository": "https://github.com/HaYanJongSeong/Open_Cord",

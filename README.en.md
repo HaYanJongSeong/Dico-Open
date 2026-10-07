@@ -20,7 +20,7 @@ Typical flow:
 4. Send normal messages in the thread to talk to the OpenCode agent.
 5. Use slash commands in the thread for agent/model selection, interruption, diffs, and synchronization.
 
-> The npm package has not been published. Use the source installation below. The npm instructions are a reference for a possible future release, not a working installation route today. Do not run `npx opencord`; it is a different project.
+> The npm package name is `@hayanjongseong/open_cord`. Do not run `npx opencord`; it is a different project.
 
 ## Requirements
 
@@ -33,9 +33,9 @@ Typical flow:
 | Discord message content intent | Required for thread passthrough messages. |
 | Local project paths | The bot must run on the same machine where configured projects exist. |
 
-## npm installation (after publication)
+## npm installation
 
-These steps are for use after the package is published. Source installation is the currently supported route.
+Run `npx @hayanjongseong/open_cord` without building from source. Set up your Discord bot and local configuration first.
 
 1. Install [Node.js](https://nodejs.org/) 24 or newer and [OpenCode CLI](https://opencode.ai/v2/docs/) v2. Check `node --version` and `opencode --version` in a terminal. If OpenCode does not start, install it first or set `OPENCODE_EXECUTABLE` in the working directory's `.env`.
 2. Create an application and bot in the [Discord Developer Portal](https://discord.com/developers/applications), then copy the token. Enable Message Content Intent. In the OAuth2 URL Generator, select the `bot` and `applications.commands` scopes and invite the bot to your server. The bot needs View Channel, Read Message History, Send Messages, Create Public Threads, and Send Messages in Threads permissions. Create a text channel that only you and the bot can access. Enable Developer Mode in Discord's user settings, then right-click to copy the server, channel, and your own account IDs.
@@ -58,7 +58,7 @@ servers:
 4. Run the following with that working directory as your current directory:
 
 ```bash
-npx open_cord
+npx @hayanjongseong/open_cord
 ```
 
 On the first run, npm may download the package and ask you to confirm installation. Keep the terminal open; press Ctrl+C to stop. The bot reads `config.yaml` and the optional `.env` from the current working directory and creates `state.json` there. Run `/help` and `/new` in the Discord channel, then send a message in the new thread to check the connection. Run only one bot instance. `npx` does not create the Discord bot, channel, or `config.yaml` for you. Do not run `npx opencord`; it is a different project.
@@ -102,6 +102,8 @@ pnpm build
 ```
 
 ## Installation verification
+
+`@hayanjongseong/open_cord@0.1.0` is public on npm. The registry's `latest` tag points to `0.1.0`, and its SHA-512 integrity matches the release archive. Both npm installation and `npx @hayanjongseong/open_cord@0.1.0` with a fresh cache were checked in separate Windows directories. Both loaded the executable and rejected a missing local `config.yaml` with the expected configuration error. These checks cover package download and startup, not first-time setup with a new Discord bot.
 
 On 2026-10-07, source commit `09ec76f` was extracted into a separate Windows directory with no existing `node_modules`, local configuration, or build output. Installation with pnpm 10.33.1, type checking, building, and all 515 tests passed. The checks passed on Node.js 24.15.0 (the `.nvmrc` version) and 24.16.0. The compiled entrypoint also rejected a missing `config.yaml` with the expected configuration error. Validation of `config.example.yaml` passed as well.
 

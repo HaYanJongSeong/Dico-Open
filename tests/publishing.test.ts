@@ -11,7 +11,7 @@ describe('publishing', () => {
     const ignore = readFileSync(new URL('../.gitignore', import.meta.url), 'utf8');
     expect(pkg.main).toBe('dist/src/index.js');
     expect(pkg.types).toBe('dist/src/index.d.ts');
-    expect(pkg.name).toBe('open_cord');
+    expect(pkg.name).toBe('@hayanjongseong/open_cord');
     expect(pkg.version).toBe('0.1.0');
     expect(pkg.repository).toBe('https://github.com/HaYanJongSeong/Open_Cord');
     expect(pkg.private).toBeUndefined();

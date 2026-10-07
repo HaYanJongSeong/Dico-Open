@@ -20,7 +20,7 @@ Node.js와 TypeScript로 작성했으며 `discord.js` v14와 `@opencode-ai/sdk/v
 4. 스레드에 일반 메시지를 보내 OpenCode 에이전트와 대화합니다.
 5. 스레드의 슬래시 명령으로 에이전트·모델 선택, 작업 중단, 변경 사항 확인, 동기화를 수행합니다.
 
-> **npm 미게시:** 아래 소스 설치를 사용하세요. npm 설치 안내는 향후 게시할 경우를 위한 참고이며 현재 사용할 수 있는 설치 방법이 아닙니다. **`npx opencord`는 다른 프로젝트이므로 실행하지 마세요.**
+> npm 패키지명은 `@hayanjongseong/open_cord`입니다. **`npx opencord`는 다른 프로젝트이므로 실행하지 마세요.**
 
 ## 요구 사항
 
@@ -33,9 +33,9 @@ Node.js와 TypeScript로 작성했으며 `discord.js` v14와 `@opencode-ai/sdk/v
 | Discord Message Content Intent | 스레드의 일반 메시지를 전달하는 데 필요합니다. |
 | 로컬 프로젝트 경로 | 설정한 프로젝트가 있는 컴퓨터에서 봇을 실행해야 합니다. |
 
-## npm 설치 (게시 후)
+## npm 설치
 
-이 절차는 npm 게시 후 사용할 수 있습니다. 현재 설치는 아래 **소스 설치**를 따르세요.
+소스 빌드 없이 `npx @hayanjongseong/open_cord`로 실행합니다. Discord 봇과 로컬 설정은 먼저 준비해야 합니다.
 
 1. [Node.js](https://nodejs.org/) 24 이상과 [OpenCode CLI](https://opencode.ai/v2/docs/) v2를 설치합니다. 터미널에서 `node --version`과 `opencode --version`을 확인합니다. OpenCode가 실행되지 않으면 먼저 설치하거나 작업 폴더의 `.env`에서 `OPENCODE_EXECUTABLE`을 지정합니다.
 2. [Discord Developer Portal](https://discord.com/developers/applications)에서 앱과 봇을 만들고 토큰을 복사합니다. **Message Content Intent**를 켭니다. OAuth2 URL Generator에서 `bot`, `applications.commands` 범위를 선택해 서버에 초대합니다. 봇에는 **View Channel**, **Read Message History**, **Send Messages**, **Create Public Threads**, **Send Messages in Threads** 권한이 필요합니다. 사용자와 봇만 접근 가능한 텍스트 채널을 만드세요. Discord 사용자 설정에서 개발자 모드를 켠 뒤 서버·채널·본인 계정의 ID를 우클릭해 복사합니다.
@@ -58,7 +58,7 @@ servers:
 4. 같은 작업 폴더를 현재 디렉터리로 두고 실행합니다.
 
 ```bash
-npx open_cord
+npx @hayanjongseong/open_cord
 ```
 
 첫 실행 시 npm 패키지를 내려받고 설치 확인을 요청할 수 있습니다. 터미널을 켜 두세요. 종료는 Ctrl+C입니다. 봇은 **현재 작업 폴더**에서 `config.yaml`과 선택적 `.env`를 읽고 `state.json`을 만듭니다. Discord 채널에서 `/help`, `/new`를 실행하고 새 스레드에 메시지를 보내 확인하세요. 봇은 하나만 실행하세요. `npx`는 Discord 봇·채널·`config.yaml`을 만들지 않습니다. **`npx opencord`는 다른 프로젝트이므로 실행하지 마세요.**
@@ -102,6 +102,8 @@ pnpm build
 ```
 
 ## 설치 검증 범위
+
+`@hayanjongseong/open_cord@0.1.0`을 npm에 공개했습니다. 레지스트리의 `latest=0.1.0`과 배포 파일의 SHA-512 일치를 확인했습니다. 별도 Windows 디렉터리에서 npm 설치와 새 캐시를 사용하는 `npx @hayanjongseong/open_cord@0.1.0` 실행도 검사했습니다. 두 경로 모두 실행 파일을 불러왔고 로컬 `config.yaml`이 없으면 예상한 설정 오류로 종료했습니다. 이 검사는 패키지 다운로드·실행 검증이며 새 Discord 봇의 최초 연결 검증은 아닙니다.
 
 2026-10-07에 소스 커밋 `09ec76f`를 기존 `node_modules`, 로컬 설정, 빌드 결과가 없는 별도 Windows 디렉터리에 풀어 검사했습니다. pnpm 10.33.1로 의존성을 설치한 뒤 타입 검사·빌드·테스트 515개가 통과했습니다. Node.js 24.15.0(`.nvmrc` 지정 버전)과 24.16.0에서 확인했습니다. 빌드된 실행 파일도 `config.yaml`이 없을 때 예상한 설정 오류로 종료했습니다. `config.example.yaml`의 설정 검증도 통과했습니다.
 
