@@ -8,6 +8,11 @@ Discord channels map to local projects, and threads map to OpenCode sessions. Us
 
 This repository is a Node.js and TypeScript project using `discord.js` v14 and `@opencode-ai/sdk/v2`.
 
+## Auto-connecting new sessions
+
+To use newly created external sessions in Discord, set `autoConnect: true` on the mapped channel. To avoid importing every older session, also set a creation-time cutoff, such as `autoConnectSince: "2026-10-07T00:00:00+09:00"`. Only root sessions created at or after the cutoff are connected; subagent sessions are excluded. Replace the example date with the time you want auto-connect to begin.
+
+
 ## Cleaning up ended threads
 
 When sync finds an ended connection, it archives the thread if the bot created it. Messages and conversation history stay intact. Before archiving, it fetches the thread and checks its owner, server, parent channel, and current connection. A matching name alone is never a reason to archive a thread.
@@ -159,6 +164,7 @@ Channel options:
 | `questionTimeout` | `300` | Seconds to wait for user answers to agent questions. |
 | `connectHistoryLimit` | `30` | Number of recent messages requested on connection. `0` requests all available messages, but the legacy server reader may cap the result at 100. |
 | `autoConnect` | `false` | Auto-create Discord threads for externally created OpenCode sessions. |
+| `autoConnectSince` | Omitted | Earliest session creation time for auto-connect, as an ISO timestamp with a timezone. Older sessions are excluded. This does not restrict `/new` or `/connect`. |
 
 Notes:
 

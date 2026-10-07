@@ -13,6 +13,7 @@ export const channelSchema = z.object({
   questionTimeout: z.number().int().positive().default(300),
   connectHistoryLimit: z.number().int().nonnegative().default(30),
   autoConnect: z.boolean().default(false),
+  autoConnectSince: z.iso.datetime({ offset: true }).optional(),
 });
 
 /** Zod schema for a Discord server (guild). */

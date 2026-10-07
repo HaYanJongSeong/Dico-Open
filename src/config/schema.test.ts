@@ -33,11 +33,27 @@ describe('configSchema', () => {
     expect(channel.questionTimeout).toBe(300);
     expect(channel.connectHistoryLimit).toBe(30);
     expect(channel.autoConnect).toBe(false);
+    expect(channel.autoConnectSince).toBeUndefined();
   });
 
   it('rejects config without discordToken', () => {
     const result = configSchema.safeParse({ servers: [] });
     expect(result.success).toBe(false);
+  });
+
+  it.each(['2026-10-06T15:00:00Z', '2026-10-07T00:00:00+09:00'])('preserves an ISO autoConnectSince: %s', (autoConnectSince) => {
+    const result = configSchema.parse({
+      ...validConfig,
+      servers: [{ serverId: '111', channels: [{ channelId: '222', projectPath: '/path', autoConnectSince }] }],
+    });
+    expect(result.servers[0]!.channels[0]!.autoConnectSince).toBe(autoConnectSince);
+  });
+
+  it.each(['', 'today', '2026-10-07', '2026-10-07T00:00:00', '2026-02-30T00:00:00Z', 123])('rejects an invalid autoConnectSince: %s', (autoConnectSince) => {
+    expect(configSchema.safeParse({
+      ...validConfig,
+      servers: [{ serverId: '111', channels: [{ channelId: '222', projectPath: '/path', autoConnectSince }] }],
+    }).success).toBe(false);
   });
 
   it('rejects config without servers', () => {

@@ -12,7 +12,7 @@ describe('publishing', () => {
     expect(pkg.main).toBe('dist/src/index.js');
     expect(pkg.types).toBe('dist/src/index.d.ts');
     expect(pkg.name).toBe('dico-open');
-    expect(pkg.version).toBe('0.1.2');
+    expect(pkg.version).toBe('0.1.3');
     expect(pkg.repository).toBe('https://github.com/HaYanJongSeong/Dico-Open');
     expect(pkg.private).toBeUndefined();
     expect(pkg.bin?.['dico-open']).toBe('dist/src/cli.js');

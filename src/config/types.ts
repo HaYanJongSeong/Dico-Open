@@ -11,6 +11,7 @@ export interface ChannelConfig {
   questionTimeout?: number;
   connectHistoryLimit?: number;
   autoConnect?: boolean;
+  autoConnectSince?: string;
 }
 
 /** Configuration for a Discord server (guild). */

@@ -298,7 +298,7 @@ export async function startBot(options: StartBotOptions = {}): Promise<StartedBo
       },
     },
   });
-  dedupedAutoConnectSession = dedupeAutoConnectSession(stateManager, autoConnectSession, (path) => getAutoConnectProjects(config).has(path));
+  dedupedAutoConnectSession = dedupeAutoConnectSession(stateManager, autoConnectSession, (path, session) => isAutoConnectEligible(config, path, session));
    const sessionBridge = options.sessionBridge ?? new SessionBridge({ stateManager, streamSubscriber: asSessionStreamSubscriber(streamHandler), syncImages: process.env.OPENCODE_DISCORD_SYNC_IMAGES === 'true' });
 
   startupLogger.info('OpenCode 서버 복구 중');
@@ -438,7 +438,8 @@ export async function startBot(options: StartBotOptions = {}): Promise<StartedBo
       for (const session of sessions) {
         const projectPath = getSessionProjectPath(session);
         const sessionCreatedAt = getSessionCreatedAt(session);
-        if (projectPath === undefined || sessionCreatedAt < discoveryStartedAt) {
+        if (projectPath === undefined || (getFirstAutoConnectChannel(config, projectPath)?.channel.autoConnectSince === undefined
+          && sessionCreatedAt < discoveryStartedAt)) {
           continue;
         }
         await dedupedAutoConnectSession(projectPath, session, discoveryClient, knownAutoConnectSessionIds);
@@ -478,7 +479,11 @@ export async function startBot(options: StartBotOptions = {}): Promise<StartedBo
         sessionId: session.sessionId,
         projectPath: session.projectPath,
       }, async () => {
-        await autoConnectSession(session.projectPath, { id: session.sessionId, title }, client);
+        const source = getFirstAutoConnectChannel(config, session.projectPath)?.channel.autoConnectSince === undefined
+          ? { id: session.sessionId, title }
+          : (await listClientSessions(client, session.projectPath)).find((entry) => getSessionId(entry) === session.sessionId);
+        if (!isAutoConnectEligible(config, session.projectPath, source)) return;
+        await autoConnectSession(session.projectPath, source, client);
         attached = Object.values(stateManager.getState().sessions)
           .some((entry) => entry.sessionId === session.sessionId && entry.status !== 'ended');
       });
@@ -1130,12 +1135,11 @@ async function startAutoConnectProjects(
 function dedupeAutoConnectSession(
   stateManager: StateManagerLike,
   autoConnectSession: (projectPath: string, session: unknown, client: unknown) => Promise<void> | void,
-  isConfiguredProject: (projectPath: string) => boolean,
+  isEligibleSession: (projectPath: string, session: unknown) => boolean,
 ): (projectPath: string, session: unknown, client: unknown, knownSessionIds: Set<string>) => Promise<void> {
   return async (projectPath, session, client, knownSessionIds) => {
     const sessionId = getSessionId(session);
-    if (!isConfiguredProject(projectPath) || (getSessionProjectPath(session) !== undefined && getSessionProjectPath(session) !== projectPath)
-      || sessionId === undefined || (isRecord(session) && typeof session.parentID === 'string' && session.parentID !== '')
+    if (!isEligibleSession(projectPath, session) || sessionId === undefined
       || knownSessionIds.has(sessionId) || isSessionAttached(stateManager, sessionId)) {
       return;
     }
@@ -1289,6 +1293,14 @@ async function defaultAutoConnectSession(
     status: 'active',
   });
   const sessionBridge = dependencies.getSessionBridge?.();
+  if (isRecord(thread.members) && typeof thread.members.add === 'function') {
+    const addMember = thread.members.add.bind(thread.members);
+    for (const userId of channel.channel.allowedUsers ?? []) {
+      await warnOnFailure(logger, '자동 연결 스레드 참여자 추가 실패', { threadId, userId }, async () => {
+        await addMember(userId);
+      });
+    }
+  }
   await dependencies.streamHandler.subscribe(threadId, sessionId, client, sessionBridge?.getDedupeSet(threadId), projectPath);
   await sendThreadNotice(thread, `세션 \`${sessionId}\`에 자동으로 연결했습니다.`);
   if (sessionBridge !== undefined) {
@@ -1334,6 +1346,17 @@ function getFirstAutoConnectChannel(config: BotConfig, projectPath: string): { g
   }
 
   return undefined;
+}
+
+function isAutoConnectEligible(config: BotConfig, projectPath: string, session: unknown): boolean {
+  const channel = getFirstAutoConnectChannel(config, projectPath)?.channel;
+  if (channel === undefined || !isRecord(session)
+    || (getSessionProjectPath(session) !== undefined && getSessionProjectPath(session) !== projectPath)
+    || (typeof session.parentID === 'string' && session.parentID !== '')) return false;
+  if (channel.autoConnectSince === undefined) return true;
+  const createdAt = getSessionCreatedAt(session);
+  return isRecord(session.time) && typeof session.time.created === 'number'
+    && Number.isFinite(createdAt) && createdAt >= Date.parse(channel.autoConnectSince);
 }
 
 function hasThreadCreate(channel: unknown): channel is { threads: { create(options: { name: string }): Promise<unknown> | unknown } } {

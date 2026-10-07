@@ -6,8 +6,132 @@ import type { StartedBot, StartBotOptions } from './index.js';
 import type { BotState, ServerState, SessionState } from './state/types.js';
 import type { SessionBridge } from './opencode/sessionBridge.js';
 import { BotError, ErrorCode } from './utils/errors.js';
+import type { ChannelConfig } from './config/types.js';
+import type { AutoConnectDelegate } from './opencode/streamHandler.js';
 
 const startedBots: StartedBot[] = [];
+
+describe('autoConnectSince 자동 연결 회귀', () => {
+  const since = '2026-10-07T00:00:00+09:00';
+  const cutoff = Date.parse(since);
+  const projectPath = '/project/cutoff';
+  const roots = [
+    { id: 'old', directory: projectPath, time: { created: cutoff - 1, updated: cutoff + 100 } },
+    { id: 'boundary', directory: projectPath, time: { created: Date.parse('2026-10-06T15:00:00Z') } },
+    { id: 'future', directory: projectPath, time: { created: cutoff + 1 } },
+    { id: 'missing', directory: projectPath },
+    { id: 'invalid', directory: projectPath, time: { created: NaN } },
+    { id: 'infinite', directory: projectPath, time: { created: Infinity } },
+    { id: 'child', directory: projectPath, parentID: 'boundary', time: { created: cutoff + 1 } },
+    { id: 'foreign', directory: '/project/other', time: { created: cutoff + 1 } },
+  ];
+  afterEach(() => vi.useRealTimers());
+
+  async function setup(channels: ChannelConfig[], sessions: unknown[], events: unknown[] = []) {
+    vi.useFakeTimers();
+    const state: BotState = { version: 1, servers: {}, sessions: {}, queues: {} };
+    const client = { session: { list: vi.fn(async () => sessions) }, global: { event: vi.fn(async () => ({ stream: stream() })) } };
+    async function* stream() {
+      for (const session of events) yield { payload: { type: 'session.created', info: session } };
+    }
+    const threads = new Map<string, unknown>();
+    const on = vi.fn();
+    const connectToSession = vi.fn();
+    const create = vi.fn(async ({ name }: { name: string }) => {
+      const thread = { id: `thread-${name}`, send: vi.fn() };
+      threads.set(thread.id, thread);
+      return thread;
+    });
+    let delegate: AutoConnectDelegate | undefined;
+    await startBot({
+      configLoader: { load: vi.fn(), getConfig: () => ({ discordToken: 'token', servers: [{ serverId: 'guild', channels }] }) },
+      stateManager: {
+        load: vi.fn(), getState: () => state, getServer: vi.fn(), setServer: vi.fn(), removeServer: vi.fn(),
+        getSession: (id) => state.sessions[id], setSession: (id, session) => { state.sessions[id] = session; },
+        removeSession: vi.fn(), getQueue: () => [], clearQueue: vi.fn(),
+      },
+      serverManager: { ensureRunning: vi.fn(async () => client), getClient: () => client },
+      cacheManager: { refresh: vi.fn() },
+      createStreamHandler: (options) => { delegate = options.autoConnectHandler; return { subscribe: vi.fn() }; },
+      sessionBridge: { getDedupeSet: () => new Set<string>(), replaySessionHistory: vi.fn(async () => ({})), connectToSession } as unknown as SessionBridge,
+      createDiscordClient: () => ({ login: vi.fn(), on, channels: { fetch: async (id) => threads.get(id)
+        ?? (channels.some((channel) => channel.channelId === id) ? { threads: { create } } : undefined) } }),
+      deployCommands: vi.fn(), getCommandDefinitions: () => [], preflight: vi.fn(), now: () => cutoff + 100,
+      logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+    });
+    return { state, client, create, on, connectToSession, delegate: delegate! };
+  }
+
+  it.each(['startup', 'SSE', 'poll', 'reconnect'] as const)('%s는 경계 이후 루트 두 개만 생성하고 중복을 제외한다', async (path) => {
+    const channel = { channelId: 'channel', projectPath, autoConnect: true, autoConnectSince: since };
+    const f = await setup([channel], path === 'startup' ? roots : [], path === 'SSE' ? [...roots, ...roots] : []);
+    if (path === 'poll') {
+      f.client.session.list.mockResolvedValue(roots);
+      await vi.advanceTimersByTimeAsync(1000);
+    }
+    if (path === 'reconnect') {
+      for (const root of roots) await f.delegate.handleSessionCreated(projectPath, root, f.client as never);
+      f.client.session.list.mockResolvedValue(roots);
+      await f.delegate.recoverMissedSessions!(projectPath, f.client as never);
+    }
+    await vi.advanceTimersByTimeAsync(0);
+    expect(f.create.mock.calls.map(([options]) => options.name).sort()).toEqual(['boundary', 'future']);
+    f.client.session.list.mockResolvedValue(roots);
+    await f.delegate.recoverMissedSessions!(projectPath, f.client as never);
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(f.create).toHaveBeenCalledTimes(2);
+    expect(Object.values(f.state.sessions).map((session) => session.sessionId).sort()).toEqual(['boundary', 'future']);
+  });
+
+  it('autoConnect=false는 cutoff 이후 세션도 생성하지 않는다', async () => {
+    const f = await setup([{ channelId: 'channel', projectPath, autoConnect: false, autoConnectSince: since }], roots);
+    for (const root of roots) await f.delegate.handleSessionCreated(projectPath, root, f.client as never);
+    expect(f.create).not.toHaveBeenCalled();
+  });
+
+  it.each([roots[0], roots[3], roots[6], undefined, roots[1]])('삭제된 스레드 재연결도 원본 생성 시각·자식 guard를 적용한다: %j', async (source) => {
+    const f = await setup([{ channelId: 'channel', projectPath, autoConnect: true, autoConnectSince: since }], []);
+    const sessionId = source?.id ?? 'absent';
+    f.state.sessions['deleted-thread'] = {
+      sessionId, guildId: 'guild', channelId: 'channel', projectPath, agent: 'build', model: null,
+      createdBy: 'auto-connect', createdAt: cutoff + 100, lastActivityAt: cutoff + 100, status: 'active',
+    };
+    f.client.session.list.mockResolvedValue(source ? [source] : []);
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(f.create).toHaveBeenCalledTimes(source === roots[1] ? 1 : 0);
+  });
+
+  it('cutoff가 없으면 이전 생성 시각과 누락된 생성 시각을 허용한다', async () => {
+    const f = await setup([{ channelId: 'channel', projectPath, autoConnect: true }], [roots[0], roots[3], roots[6]]);
+    expect(f.create.mock.calls.map(([options]) => options.name)).toEqual(['old', 'missing']);
+  });
+
+  it('명시적 /connect는 cutoff 이전 세션도 연결한다', async () => {
+    const f = await setup([{ channelId: 'channel', projectPath, autoConnect: true, autoConnectSince: since }], [roots[0]]);
+    expect(f.create).not.toHaveBeenCalled();
+    const listener = f.on.mock.calls.find(([event]) => event === 'interactionCreate')![1] as (interaction: unknown) => void;
+    listener({
+      id: 'connect-old', channelId: 'channel', guildId: 'guild', channel: { threads: { create: f.create } },
+      commandName: 'connect', user: { id: 'user' }, replied: false, deferred: false,
+      isChatInputCommand: () => true, isAutocomplete: () => false,
+      options: { getString: (name: string) => name === 'session' ? 'old' : null },
+      deferReply: vi.fn(), editReply: vi.fn(), reply: vi.fn(), followUp: vi.fn(),
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(f.create).toHaveBeenCalledOnce();
+    expect(f.connectToSession).toHaveBeenCalledWith(expect.objectContaining({ sessionId: 'old', projectPath }));
+  });
+
+  it.each([since, undefined])('동일 프로젝트의 첫 true 채널 cutoff만 적용한다: %s', async (autoConnectSince) => {
+    const f = await setup([
+      { channelId: 'disabled', projectPath, autoConnect: false, autoConnectSince: '2027-01-01T00:00:00Z' },
+      { channelId: 'first', projectPath, autoConnect: true, autoConnectSince },
+      { channelId: 'second', projectPath, autoConnect: true, autoConnectSince: autoConnectSince ? undefined : since },
+    ], [roots[0], roots[1]]);
+    expect(f.create.mock.calls.map(([options]) => options.name)).toEqual(autoConnectSince ? ['boundary'] : ['old', 'boundary']);
+    expect(Object.values(f.state.sessions).every((session) => session.channelId === 'first')).toBe(true);
+  });
+});
 
 describe('자동 스레드 보관 동기화 회귀', () => {
   afterEach(() => vi.useRealTimers());
@@ -608,7 +732,7 @@ describe('startBot', () => {
     expect(reply).toHaveBeenCalledWith(expect.objectContaining({ flags: MessageFlags.Ephemeral }));
   });
 
-  it('remembers /new threads before subscribing their stream', async () => {
+  it.each([undefined, '2027-01-01T00:00:00Z'])('remembers /new threads without applying autoConnectSince: %s', async (autoConnectSince) => {
     const calls: string[] = [];
     const state: BotState = { version: 1, servers: {}, sessions: {}, queues: {} };
     const stateManager = {
@@ -662,7 +786,7 @@ describe('startBot', () => {
         load: vi.fn(),
         getConfig: vi.fn(() => ({
           discordToken: 'token',
-          servers: [{ serverId: 'guild-1', channels: [{ channelId: 'channel-1', projectPath: '/project/one' }] }],
+          servers: [{ serverId: 'guild-1', channels: [{ channelId: 'channel-1', projectPath: '/project/one', autoConnect: true, autoConnectSince }] }],
         })),
       },
       stateManager,
@@ -2307,6 +2431,7 @@ describe('startBot', () => {
     const thread = {
       id: 'thread-auto',
       send: vi.fn(),
+      members: { add: vi.fn(async () => undefined) },
     };
     const parentChannel = {
       threads: {
@@ -2345,7 +2470,7 @@ describe('startBot', () => {
           servers: [
             {
               serverId: 'guild-1',
-              channels: [{ channelId: 'channel-auto', projectPath: '/project/eager', autoConnect: true, defaultAgent: 'plan' }],
+              channels: [{ channelId: 'channel-auto', projectPath: '/project/eager', autoConnect: true, defaultAgent: 'plan', allowedUsers: ['user-1'] }],
             },
           ],
         })),
@@ -2365,6 +2490,7 @@ describe('startBot', () => {
     });
 
     await vi.waitFor(() => expect(parentChannel.threads.create).toHaveBeenCalledOnce());
+    await vi.waitFor(() => expect(thread.members.add).toHaveBeenCalledWith('user-1'));
     expect(stateManager.setSession).toHaveBeenCalledWith('thread-auto', {
       sessionId: 'missed-session',
       guildId: 'guild-1',
